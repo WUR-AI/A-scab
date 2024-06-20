@@ -1,4 +1,6 @@
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import pandas as pd
 
 
 def plot_results(results_df, variables=None):
@@ -28,6 +30,10 @@ def plot_results(results_df, variables=None):
             ax.fill_between(results_df['Date'], results_df[variable], where=(results_df[variable] >= 0), color='blue',
                             alpha=0.3)
 
+        if variable == 'Precipitation':
+            ax.axhline(y=0.2, color='red', linestyle='--')
+
+
         # Add vertical line when the variable first passes the threshold
         thresholds = [0.016, 0.99]
         if variable == 'AscosporeMaturation' and thresholds is not None:
@@ -42,4 +48,42 @@ def plot_results(results_df, variables=None):
     plt.suptitle('Model Values Over Time')
     plt.xticks(rotation=45)
     plt.subplots_adjust(hspace=0.0)  # Adjust vertical spacing between subplots
+    plt.show()
+
+
+def plot_precipitation_with_rain_event(df_hourly, day):
+    # Filter the DataFrame for the specific day
+    df_day = df_hourly[df_hourly['Hourly Date'].dt.date == day.date()]
+    # Plot the precipitation
+    plt.figure(figsize=(7, 4))
+    # datetime_objects = [datetime.fromisoformat(dt[:-6]) for dt in datetime_values]
+
+    plt.step(df_day['Hourly Date'], df_day['Hourly Precipitation'], where='post', label='Hourly Precipitation')
+
+    # Plot filled area for rain event
+    for idx, row in df_day.iterrows():
+        if row['Hourly Rain Event']:
+            plt.axvspan(row['Hourly Date'], row['Hourly Date'] + pd.Timedelta(hours=1), color='gray', alpha=0.3)
+
+    plt.xlabel('Hour of the Day')
+    plt.ylabel('Precipitation')
+    plt.title(f'Precipitation and Rain Event for {day.date()}')
+    plt.legend()
+    plt.grid(True)
+
+    # Set minor ticks to represent hours
+    plt.gca().xaxis.set_minor_locator(mdates.HourLocator(interval=1))
+    plt.gca().xaxis.set_minor_formatter(mdates.DateFormatter('%H:%M'))
+
+    # Enable minor grid lines
+    plt.grid(which='minor', linestyle='--', linewidth=0.5)
+
+    # Format major ticks to hide day information
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H'))
+    plt.gca().xaxis.set_major_locator(mdates.HourLocator(interval=1))
+    # Set y-range to start from 0
+    plt.ylim(0, max(0.21, max(df_day['Hourly Precipitation']) + 0.1))
+
+    # Add horizontal line at y = 0.2
+    plt.axhline(y=0.2, color='red', linestyle='--', label='Threshold')
     plt.show()

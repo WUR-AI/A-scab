@@ -7,6 +7,7 @@ import torch
 
 from ascab.utils.generic import fill_gaps
 
+
 def get_meteo(params, verbose=False):
     url = "https://archive-api.open-meteo.com/v1/archive"
 
@@ -60,12 +61,16 @@ def compute_leaf_wetness_duration(df_weather_day):
 
 
 def summarize_weather(dates, df_weather):
-    result_data = {'Date': [], 'LeafWetness': []}
+    result_data = {'Date': [], 'LeafWetness': [], 'HasRain': [], 'Precipitation': []}
     for day in dates:
         result_data['Date'].append(day)
         df_weather_day = df_weather.loc[day.strftime('%Y-%m-%d')]
         leaf_wetness = compute_leaf_wetness_duration(df_weather_day)
+        has_rain_event = np.any(is_rain_event(df_weather_day))
+        total_precipitation = df_weather_day['precipitation'].sum()
         result_data['LeafWetness'].append(leaf_wetness)
+        result_data['HasRain'].append(has_rain_event)
+        result_data['Precipitation'].append(total_precipitation)
     return pd.DataFrame(result_data)
 
 
@@ -74,3 +79,19 @@ def is_rain_event(df_weather_day, threshold=0.2, max_gap=2):
     rain = precipitation >= threshold
     result = fill_gaps(rain, max_gap=max_gap)
     return result
+
+
+def summarize_rain(dates, df_weather):
+    hourly_data = []
+    for day in dates:
+        df_weather_day = df_weather.loc[day.strftime('%Y-%m-%d')]
+        rain_event = is_rain_event(df_weather_day)
+
+        # Append hourly data with rain_event to the list
+        hourly_data.extend(zip(df_weather_day.index, df_weather_day['precipitation'], rain_event))
+
+    # Create DataFrame from the collected hourly data
+    df_hourly = pd.DataFrame(hourly_data, columns=['Hourly Date', 'Hourly Precipitation', 'Hourly Rain Event'])
+
+    return df_hourly
+

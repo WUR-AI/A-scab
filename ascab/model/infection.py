@@ -1,5 +1,7 @@
 from torch import nn
 import numpy as np
+import pytz
+import datetime
 
 from ascab.utils.weather import is_rain_event
 from ascab.utils.generic import items_since_last_true
@@ -37,12 +39,6 @@ def compute_derivative_ds1(temperature, hour_since_onset):
     result = 0.067 * temperature * np.exp(u) / ((1.0 + np.exp(u)) ** 2)
     # result = np.where(hour_since_onset >= 0, result, 0.0)
     return result
-
-
-def compute_derivative_ds1_numerical(temperature, hour_since_onset, timestep=1.0):
-    delta_y = compute_ds1(temperature, hour_since_onset) - compute_ds1(temperature, hour_since_onset - timestep)
-    delta_x = timestep
-    return delta_y / delta_x
 
 
 def compute_sdl_wet(rain, lai=1.0, height=0.5):
@@ -133,12 +129,16 @@ def compute_ds1_mor(hour_since_last_rain):
     return result
 
 
-def compute_ds2_mor():
-    return 0  # TODO implement eq 21
+def compute_ds2_mor(hour_since_last_rain, temperature, humidity):
+    result = (-1.538 + 0.253 * temperature - 0.00694 * (temperature ** 2)) * \
+             (1 - 0.977 ** hour_since_last_rain) * (0.0108 * humidity - 0.008)
+    return result
 
 
-def compute_ds3_mor():
-    return 0  # TODO implement eq 22
+def compute_ds3_mor(hour_since_last_rain, temperature):
+    result = (0.0028 * hour_since_last_rain) * \
+             (-1.27 + 0.326 * temperature - 0.0102 * (temperature ** 2))
+    return result
 
 
 def compute_leaf_development(lai):
@@ -156,6 +156,16 @@ def get_discharge_date(df_weather_day, pat_previous, pat_current, time_previous)
     if discharge_hour_index is None: return None
     discharge_date = df_weather_day.index[discharge_hour_index]
     return discharge_date
+
+
+def get_values_last_infections(infections: list):
+    if infections:
+        time_previous = infections[-1].discharge_date
+        pat_previous = infections[-1].pat_start
+    else:
+        time_previous = datetime.datetime(1900, 1, 1, 0, 0, 0, tzinfo=pytz.utc)
+        pat_previous = 0
+    return time_previous, pat_previous
 
 
 class InfectionRate(nn.Module):
@@ -213,17 +223,22 @@ class InfectionRate(nn.Module):
         hours_since_onset = ((hours - self.discharge_date).total_seconds() / 3600).to_numpy()
         temperatures = df_weather_day['temperature_2m'].to_numpy()
         rains = df_weather_day['precipitation'].to_numpy()
+        humidities = df_weather_day['relative_humidity_2m'].to_numpy()
         deposition_rates = compute_deposition_rate(rains, self.lai.value).numpy()
         hours_since_rain = items_since_last_true(
             is_rain_event(df_weather_day))  # issue: past 24 hours not taken into account
-        for _, hour_since_onset, rain, deposition_rate, hour_since_rain in zip(temperatures, hours_since_onset, rains,
-                                                                               deposition_rates, hours_since_rain):
+
+        for _, hour_since_onset, rain, humidity, deposition_rate, hour_since_rain in \
+                zip(temperatures, hours_since_onset, rains, humidities, deposition_rates, hours_since_rain):
             temperature = 20.0  # TODO: remove
             deposition_rate = 1.0  # TODO: remove
 
-            dm1 = 0  # compute_ds1_mor(hour_since_rain)
-            dm2 = compute_ds2_mor()
-            dm3 = compute_ds3_mor()
+            dm1 = compute_ds1_mor(hour_since_rain)
+            dm2 = compute_ds2_mor(hour_since_rain, temperature, humidity)
+            dm3 = compute_ds3_mor(hour_since_rain, temperature)
+
+            if True: # TODO: remove
+                dm1, dm2, dm3 = 0, 0, 0
 
             mor1 = dm1 * self.s1
             mor2 = dm2 * self.s2

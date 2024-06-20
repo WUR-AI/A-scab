@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "ascab"
+version = "0.1.0"
+description = ""
+authors = ["Michiel Kallenberg <michiel.kallenberg@wur.nl>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.13"
+openmeteo-requests = "^1.2.0"
+requests-cache = "^1.2.1"
+retry-requests = "^2.0.0"
+pytz = "^2024.1"
+astral = "^3.2"
+pandas = "^2.2.2"
+torch = "^2.3.1"
+datetime = "^5.5"
+matplotlib = "^3.9.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

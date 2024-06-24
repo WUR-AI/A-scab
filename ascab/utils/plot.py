@@ -15,9 +15,16 @@ def plot_results(results_df, variables=None):
     # Exclude 'Date' column from variables to be plotted
     variables = [var for var in variables if var != 'Date']
     variables.reverse()  # Reverse the order of the variables
-
     num_variables = len(variables)
     fig, axes = plt.subplots(num_variables, 1, figsize=(7, 4 * num_variables), sharex=True)
+
+    # Find the closest date to April 1st in the dataset
+    april_first = results_df['Date'] + pd.DateOffset(month=4, day=1)
+    closest_april_first = april_first[april_first <= results_df['Date']].max()
+
+    # Calculate the day number since April 1st
+    results_df['DayNumber'] = (results_df['Date'] - closest_april_first).dt.days
+
 
     # Iterate over each variable and create a subplot for it
     for i, variable in enumerate(variables):
@@ -33,7 +40,6 @@ def plot_results(results_df, variables=None):
         if variable == 'Precipitation':
             ax.axhline(y=0.2, color='red', linestyle='--')
 
-
         # Add vertical line when the variable first passes the threshold
         thresholds = [0.016, 0.99]
         if variable == 'AscosporeMaturation' and thresholds is not None:
@@ -44,9 +50,30 @@ def plot_results(results_df, variables=None):
                     x_coordinate = results_df.loc[first_pass_index, 'Date']  # Get the corresponding date value
                     ax.axvline(x=x_coordinate, color='red', linestyle='--', label=f'Threshold ({threshold})')
 
+        if i == num_variables - 1:  # Only add secondary x-axis to the bottom subplot
+            # Add secondary x-axis with limited ticks starting from day 0
+            tick_interval = 25
+            secax = ax.secondary_xaxis('bottom', color='grey')
+
+            # Determine the closest date to April 1st to start the ticks
+            start_date = pd.Timestamp('2011-04-01')
+            start_index = results_df.index[results_df['Date'] >= start_date][0]
+
+            # Generate tick locations and labels based on the start_index and tick_interval
+            tick_locations = results_df['Date'].iloc[start_index::tick_interval]
+            tick_labels = results_df['DayNumber'].iloc[start_index::tick_interval]
+
+            secax.set_xticks(tick_locations)
+            secax.set_xticklabels(tick_labels)
+            # Adjust tick label rotation and alignment
+            secax.tick_params(axis='x', labelrotation=0, direction='in')
+
+
     plt.xlabel('Date')
     plt.suptitle('Model Values Over Time')
     plt.xticks(rotation=45)
+
+
     plt.subplots_adjust(hspace=0.0)  # Adjust vertical spacing between subplots
     plt.show()
 

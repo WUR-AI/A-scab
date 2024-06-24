@@ -90,11 +90,11 @@ class LAI(nn.Module):
 
     def compute_rate_torch(self, current_value, day, avg_temperature):
         # Calculate the daily change
-        number_of_shoots_per_m2 = 50  # TODO: check
+        number_of_shoots_per_m2 = 85 #50 TODO: check
         dy_dt = 0.00008 * max(0, (avg_temperature - 4.0)) * number_of_shoots_per_m2
         # Check conditions and modify dy_dt accordingly
         start_day = torch.tensor(datetime.datetime.strptime('April 1', '%B %d').timetuple().tm_yday)
-        condition = (day < start_day)
+        condition = (day < start_day) or (current_value > 5.0)
         dy_dt = torch.where(condition, torch.tensor(0.0), dy_dt)
         return dy_dt
 

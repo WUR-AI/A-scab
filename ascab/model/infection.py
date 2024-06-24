@@ -141,12 +141,18 @@ def compute_ds3_mor(hour_since_last_rain, temperature):
     return result
 
 
+def compute_risk(cumulative_discharge, cumulative_ds3, host_susceptibility):
+    result = cumulative_discharge * cumulative_ds3 * host_susceptibility
+    return result
+
+
 def compute_leaf_development(lai):
-    result = 1 / (-5445.5 * lai ** 2 + 661.55 * lai)
+    result = 1 / (-5445.5 * (lai ** 2) + 661.55 * (lai))  # TODO: looks suspicious
     return result
 
 
 def get_discharge_date(df_weather_day, pat_previous, pat_current, time_previous):
+    if pat_current > 0.99: return None
     # issue: past 24 hours not taken into account
     rain_events = is_rain_event(df_weather_day)
     is_daytime = df_weather_day['is_day'].to_numpy()
@@ -169,10 +175,11 @@ def get_values_last_infections(infections: list):
 
 
 class InfectionRate(nn.Module):
-    def __init__(self, discharge_date, ascospore_value, lai):
+    def __init__(self, discharge_date, ascospore_value, previous_ascospore_value, lai):
         super(InfectionRate, self).__init__()
         self.discharge_date = discharge_date
         self.pat_start = ascospore_value
+        self.pat_previous = previous_ascospore_value
         self.lai = lai
 
         self.s1 = 0.0
@@ -233,11 +240,16 @@ class InfectionRate(nn.Module):
             temperature = 20.0  # TODO: remove
             deposition_rate = 1.0  # TODO: remove
 
+            # for each step compute:
+            # fraction_{ds1,ds2,ds3} under no_mortality assumption
+            # compute mortality for {ds1,ds2,ds3}
+            # posthoc subtract died_population
+
             dm1 = compute_ds1_mor(hour_since_rain)
             dm2 = compute_ds2_mor(hour_since_rain, temperature, humidity)
             dm3 = compute_ds3_mor(hour_since_rain, temperature)
 
-            if True: # TODO: remove
+            if True:  # TODO: remove
                 dm1, dm2, dm3 = 0, 0, 0
 
             mor1 = dm1 * self.s1

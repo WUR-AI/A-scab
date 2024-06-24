@@ -4,7 +4,7 @@ import datetime
 from ascab.utils.weather import get_meteo, summarize_weather, summarize_rain
 from ascab.utils.plot import plot_results, plot_precipitation_with_rain_event
 from ascab.model.maturation import PseudothecialDevelopment, AscosporeMaturation, LAI
-from ascab.model.infection import InfectionRate, get_values_last_infections, get_discharge_date
+from ascab.model.infection import InfectionRate, get_values_last_infections, get_discharge_date, compute_leaf_development
 
 import matplotlib
 
@@ -27,7 +27,7 @@ def run_episode(dates, df_weather):
     ascospore = AscosporeMaturation(pseudothecia)
     lai = LAI()
     models = [pseudothecia, ascospore, lai]
-    result_data = {'Date': [], **{model.__class__.__name__: [] for model in models}, 'Discharge': []}
+    result_data = {'Date': [], **{model.__class__.__name__: [] for model in models}, 'LDR': [], 'Discharge': []}
     for day in dates:
         result_data['Date'].append(day)
         df_weather_day = df_weather.loc[day.strftime('%Y-%m-%d')]
@@ -39,12 +39,16 @@ def run_episode(dates, df_weather):
             result_data[m.__class__.__name__].append(m.value.clone())
 
         ascospore_value = models[1].value.clone()
+        lai_value = models[2].value.clone()
+        ldr = compute_leaf_development(lai_value)
+        result_data['LDR'].append(ldr)
+
         time_previous, pat_previous = get_values_last_infections(infections)
         discharge_date = get_discharge_date(df_weather_day, pat_previous, ascospore_value, time_previous)
 
         result_data['Discharge'].append(discharge_date is not None)
         if discharge_date is not None:
-            infections.append(InfectionRate(discharge_date, ascospore_value, lai))
+            infections.append(InfectionRate(discharge_date, ascospore_value, pat_previous, lai))
 
         for infection in infections:
             infection.progress(df_weather_day)

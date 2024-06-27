@@ -4,6 +4,7 @@ from retry_requests import retry
 import pandas as pd
 import numpy as np
 import torch
+from scipy.ndimage import label
 
 from ascab.utils.generic import fill_gaps
 
@@ -81,6 +82,20 @@ def is_rain_event(df_weather_day, threshold=0.2, max_gap=2):
     return result
 
 
+def compute_duration_and_temperature_wet_period(df_weather_infection):
+    wet = df_weather_infection.apply(lambda row: is_wet(row['precipitation'], row['vapour_pressure_deficit']), axis=1).values
+    temperature = df_weather_infection['temperature_2m'].to_numpy()
+    wet_filled = fill_gaps(wet, max_gap=4)
+    wet_periods, num_periods = label(wet_filled)
+    indices = np.where((wet_periods == 2) & (wet == True))[0]
+    if indices.size > 0:
+        last_index = indices[-1]
+        wet_hours = np.sum(wet[: last_index + 1])
+        average_temperature = np.mean(temperature[:last_index + 1])
+        return wet_hours, average_temperature
+    return None, None, None
+
+
 def summarize_rain(dates, df_weather):
     hourly_data = []
     for day in dates:
@@ -92,6 +107,5 @@ def summarize_rain(dates, df_weather):
 
     # Create DataFrame from the collected hourly data
     df_hourly = pd.DataFrame(hourly_data, columns=['Hourly Date', 'Hourly Precipitation', 'Hourly Rain Event'])
-
     return df_hourly
 

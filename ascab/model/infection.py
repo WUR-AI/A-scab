@@ -3,7 +3,7 @@ import numpy as np
 import pytz
 import datetime
 
-from ascab.utils.weather import is_rain_event
+from ascab.utils.weather import is_rain_event, compute_duration_and_temperature_wet_period
 from ascab.utils.generic import items_since_last_true
 
 
@@ -174,13 +174,42 @@ def get_values_last_infections(infections: list):
     return time_previous, pat_previous
 
 
+def meets_infection_requirement(temperature, wet_hours):
+    infection_table = {
+        'temperature': [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+                        11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0,
+                        21.0, 22.0, 23.0, 24.0, 25.0, 26.0],
+        'ascospore': [40.5, 34.7, 29.6, 27.8, 21.2, 18.0, 15.4, 13.4, 12.2, 11.0,
+                      9.0, 8.3, 8.0, 7.0, 7.0, 6.1, 6.0, 6.0, 6.0, 6.0,
+                      6.0, 6.0, 6.0, 6.1, 8.0, 11.3],
+        'conidia': [37.4, 33.6, 30.0, 26.6, 23.4, 20.5, 17.8, 15.2, 12.6, 10.0,
+                    9.5, 9.3, 9.2, 9.2, 9.2, 9.0, 8.8, 8.5, 8.2, 7.9,
+                    7.8, 7.8, 8.3, 9.3, 11.1, 14.0]
+    }
+    required_wet_hours = np.interp(temperature, infection_table['temperature'], infection_table['ascospore'])
+    return wet_hours >= required_wet_hours
+
+
+def will_infect(df_weather_infection):
+    infection_duration, infection_temperature = compute_duration_and_temperature_wet_period(df_weather_infection)
+    result = meets_infection_requirement(infection_temperature, infection_duration)
+    return result, infection_duration, infection_temperature
+
+
 class InfectionRate(nn.Module):
-    def __init__(self, discharge_date, ascospore_value, previous_ascospore_value, lai):
+    def __init__(self, discharge_date, ascospore_value, previous_ascospore_value, lai, duration, temperature):
         super(InfectionRate, self).__init__()
         self.discharge_date = discharge_date
         self.pat_start = ascospore_value
         self.pat_previous = previous_ascospore_value
         self.lai = lai
+        self.infection_duration = duration
+        self.infection_temperature = temperature
+        #self.infection_duration, self.infection_temperature, self.wet = \
+        #    compute_duration_and_temperature_wet_period(df_weather_infection)
+        #will_infect = meets_infection_requirement(self.infection_temperature, self.infection_duration)
+
+        self.done = False
 
         self.s1 = 0.0
         self.s2 = 0.0
@@ -194,13 +223,17 @@ class InfectionRate(nn.Module):
         self.s2_rate = 0.0
         self.s3_rate = 0.0
 
+        self.hours_progress = []
+
         self.s1_sigmoid_progress = []
         self.s2_sigmoid_progress = []
         self.s3_sigmoid_progress = []
 
+        self.s0_progress = []
         self.s1_progress = []
         self.s2_progress = []
         self.s3_progress = []
+        self.total_population_progress = []
 
         self.s1_rate_progress = []
         self.s2_rate_progress = []
@@ -226,8 +259,12 @@ class InfectionRate(nn.Module):
         self.s2_fake_progress = []
 
     def progress(self, df_weather_day):
+        if self.done: return
         hours = df_weather_day.index
         hours_since_onset = ((hours - self.discharge_date).total_seconds() / 3600).to_numpy()
+        self.hours_progress.extend(hours_since_onset)
+        if hours_since_onset[-1] > self.infection_duration:
+            self.done = True
         temperatures = df_weather_day['temperature_2m'].to_numpy()
         rains = df_weather_day['precipitation'].to_numpy()
         humidities = df_weather_day['relative_humidity_2m'].to_numpy()
@@ -235,9 +272,36 @@ class InfectionRate(nn.Module):
         hours_since_rain = items_since_last_true(
             is_rain_event(df_weather_day))  # issue: past 24 hours not taken into account
 
-        for _, hour_since_onset, rain, humidity, deposition_rate, hour_since_rain in \
+        sigmoid_s0 = 1.0 - compute_ds1(self.infection_temperature, hours_since_onset)
+        sigmoid_s1 = compute_ds1(self.infection_temperature, hours_since_onset)
+        sigmoid_s2 = compute_ds2(self.infection_temperature, hours_since_onset)
+        sigmoid_s3 = compute_ds3(self.infection_temperature, hours_since_onset)
+
+        s3 = sigmoid_s1 * sigmoid_s2 * sigmoid_s3
+        s2 = sigmoid_s1 * sigmoid_s2 - s3
+        s1 = sigmoid_s1 - (s2 + s3)
+        s0 = sigmoid_s0
+
+        #self.s0_progress.append(s0)
+        #self.s1_progress.append(s1)
+        #self.s2_progress.append(s2)
+        #self.s3_progress.append(s3)
+
+        dm1 = compute_ds1_mor(hours_since_rain)
+        dm2 = compute_ds2_mor(hours_since_rain, temperatures, humidities)
+        dm3 = compute_ds3_mor(hours_since_rain, temperatures)
+
+        total_population = self.total_population_progress[-1] if self.total_population_progress else 1.0
+        total_mortality = dm1 * s1 + dm2 * s2 + dm3 * s3
+        total_survival = total_population * np.cumprod(1 - total_mortality)
+        self.total_population_progress.extend(total_survival)
+
+        self.mor1_progress.extend(dm1 * s1)
+        self.mor2_progress.extend(dm2 * s2)
+        self.mor3_progress.extend(dm3 * s3)
+
+        for temperature, hour_since_onset, rain, humidity, deposition_rate, hour_since_rain in \
                 zip(temperatures, hours_since_onset, rains, humidities, deposition_rates, hours_since_rain):
-            temperature = 20.0  # TODO: remove
             deposition_rate = 1.0  # TODO: remove
 
             # for each step compute:
@@ -256,18 +320,18 @@ class InfectionRate(nn.Module):
             mor2 = dm2 * self.s2
             mor3 = dm3 * self.s3
 
-            self.sigmoid_s1 = compute_ds1(temperature, hour_since_onset)
-            ds1 = compute_derivative_ds1(temperature, hour_since_onset)
+            self.sigmoid_s1 = compute_ds1(self.infection_temperature, hour_since_onset)
+            ds1 = compute_derivative_ds1(self.infection_temperature, hour_since_onset)
             dep = ds1 * deposition_rate
             self.has_reached_s1 = self.has_reached_s1 + dep
 
-            self.sigmoid_s2 = compute_ds2(temperature, hour_since_onset)
-            ds2 = compute_derivative_ds2(temperature, hour_since_onset)
+            self.sigmoid_s2 = compute_ds2(self.infection_temperature, hour_since_onset)
+            ds2 = compute_derivative_ds2(self.infection_temperature, hour_since_onset)
             ger = ds2 * self.sigmoid_s1 + self.sigmoid_s2 * ds1  # product rule
             self.has_reached_s2 = self.has_reached_s2 + ger
 
-            self.sigmoid_s3 = compute_ds3(temperature, hour_since_onset)
-            ds3 = compute_derivative_ds3(temperature, hour_since_onset)
+            self.sigmoid_s3 = compute_ds3(self.infection_temperature, hour_since_onset)
+            ds3 = compute_derivative_ds3(self.infection_temperature, hour_since_onset)
             app = ds3 * self.sigmoid_s1 * self.sigmoid_s2 + self.sigmoid_s3 * ger
             self.has_reached_s3 = self.has_reached_s3 + app
 
@@ -301,10 +365,6 @@ class InfectionRate(nn.Module):
             self.s1_sigmoid_progress.append(self.sigmoid_s1)
             self.s2_sigmoid_progress.append(self.sigmoid_s2)
             self.s3_sigmoid_progress.append(self.sigmoid_s3)
-
-            self.mor1_progress.append(dm1)
-            self.mor2_progress.append(dm2)
-            self.mor3_progress.append(dm3)
 
             self.has_reached_s1_progress.append(self.has_reached_s1)
             self.has_reached_s2_progress.append(self.has_reached_s2)

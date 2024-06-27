@@ -1,6 +1,9 @@
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pandas as pd
+import numpy as np
+
+from ascab.model.infection import InfectionRate
 
 
 def plot_results(results_df, variables=None):
@@ -72,9 +75,43 @@ def plot_results(results_df, variables=None):
     plt.xlabel('Date')
     plt.suptitle('Model Values Over Time')
     plt.xticks(rotation=45)
-
-
     plt.subplots_adjust(hspace=0.0)  # Adjust vertical spacing between subplots
+    plt.show()
+
+
+def plot_infection(infection : InfectionRate, debug=False):
+    fig, ax1 = plt.subplots(figsize=(10, 6))  # Create figure and axis for the first plot
+
+    ax1.plot(infection.hours_progress, infection.s1_rate_progress, linestyle='dotted', label='r1', color='blue')
+    ax1.plot(infection.hours_progress, infection.s2_rate_progress, linestyle='dotted', label='r2', color='purple')
+    ax1.plot(infection.hours_progress, infection.s3_rate_progress, linestyle='dotted', label='r3', color='green')
+
+    #ax1.plot(infection.s1_sigmoid_progress, linestyle='dashdot', label='sig1', color='blue')
+    #ax1.plot(infection.s2_sigmoid_progress, linestyle='dashdot', label='sig2', color='purple')
+    #ax1.plot(infection.s3_sigmoid_progress, linestyle='dashdot', label='sig3', color='green')
+
+    ax1.plot(infection.hours_progress, infection.mor1_progress, linestyle='dashed', label='mor1', color='blue')
+    ax1.plot(infection.hours_progress, infection.mor2_progress, linestyle='dashed', label='mor2', color='purple')
+    ax1.plot(infection.hours_progress, infection.mor3_progress, linestyle='dashed', label='mor3', color='green')
+
+    ax1.plot(infection.hours_progress, infection.has_reached_s1_progress, linestyle='dashed', label='has_reached_s1', color='blue')
+    ax1.plot(infection.hours_progress, infection.has_reached_s2_progress, linestyle='dashed', label='has_reached_s2', color='purple')
+    ax1.plot(infection.hours_progress, infection.has_reached_s3_progress, linestyle='dashed', label='has_reached_s3', color='green')
+
+    ax1.plot(infection.hours_progress, infection.s1_progress, label='s1', linestyle='solid', color='blue')
+    ax1.plot(infection.hours_progress, infection.s2_progress, label='s2', linestyle='solid', color='purple')
+    ax1.plot(infection.hours_progress, infection.s3_progress, label='s3', linestyle='solid', color='green')
+
+    ax1.plot(infection.hours_progress, infection.total_population_progress, label='pop', linestyle='solid', color='yellow')
+
+    total = np.sum([infection.s1_progress, infection.s2_progress, infection.s3_progress], axis=0)
+    ax1.plot(infection.hours_progress, total, label='sum_s1_s2_s3', linestyle='solid', color='black')
+    ax1.axvline(x=infection.infection_duration, color="red", linestyle="--", label="duration")
+
+    plt.xlabel('Time')
+    plt.ylabel('Value')
+    plt.title(f'Infection Data {infection.infection_duration}')
+    plt.legend()
     plt.show()
 
 

@@ -14,6 +14,7 @@ def determine_discharge_hour_index(pat, rain_events, is_daytime, pat_previous, h
 
     first_rain_hour = np.where(rain_events == 1)[0][0]
     heavy_dew = False
+    # Rossi et al. page 304 (top left)
     if np.logical_or(np.logical_or(hours_since_previous[first_rain_hour] < 5.0, heavy_dew),
                      np.logical_and(first_rain_hour <= 7, pat <= 0.80)):
         return None
@@ -52,10 +53,12 @@ def compute_sdl_dry(lai=1.0):
     return result
 
 
-def compute_deposition_rate(rain, lai=1.0, height=0.5):
+def compute_deposition_rate(rain, lai=1.0, height=0.5, do_clip = True):
     ds_wet = compute_sdl_wet(rain, lai, height)
     ds_dry = compute_sdl_dry(lai)
-    ds_sum = np.clip(ds_wet + ds_dry, None, 1.0)
+    ds_sum = ds_wet + ds_dry
+    if do_clip:
+        ds_sum = np.clip(ds_sum, None, 1.0)
     return ds_sum
 
 
@@ -68,29 +71,6 @@ def compute_ds2(temperature, hour_since_onset):
     return result
 
 
-def compute_derivative_ds2(temperature, hour_since_onset):
-    # For result_below_20
-    coef1_below_20 = 5.23 - 0.1226 * temperature + 0.0014 * (temperature ** 2)
-    coef2_below_20 = 0.093 + 0.0112 * temperature - 0.000122 * (temperature ** 2)
-    derivative_below_20 = -1.0 * coef2_below_20
-    result_below_20 = 1.0 / (1.0 + np.exp(coef1_below_20 - coef2_below_20 * hour_since_onset))
-
-    # For result_above_20
-    coef1_above_20 = -2.97 + 0.4297 * temperature - 0.0061 * (temperature ** 2)
-    coef2_above_20 = 0.416 - 0.0031 * temperature - 0.000245 * (temperature ** 2)
-    derivative_above_20 = -1.0 * coef2_above_20
-    result_above_20 = 1.0 / (1.0 + np.exp(coef1_above_20 - coef2_above_20 * hour_since_onset))
-
-    # Choose the result based on the condition
-    condition = np.mean(temperature) <= 20.0
-    result = np.where(condition, result_below_20, result_above_20)
-
-    # Choose the derivative based on the condition
-    derivative = np.where(condition, derivative_below_20, derivative_above_20)
-    # Multiply by the derivative of the function 1/(1+exp(u))
-    return derivative * result * (result - 1.0)
-
-
 def compute_ds3(temperature, hour_since_onset):
     result_below_20 = 1.0 / (1.0 + np.exp((6.33 - 0.0647 * temperature - 0.000317 * (temperature ** 2)) - (
             0.111 + 0.01240 * temperature - 0.000181 * (temperature ** 2)) * hour_since_onset))
@@ -98,30 +78,6 @@ def compute_ds3(temperature, hour_since_onset):
             0.405 + 0.00079 * temperature - 0.000347 * (temperature ** 2)) * hour_since_onset))
     result = result_below_20 if np.mean(temperature) <= 20.0 else result_above_20
     return result
-
-
-def compute_derivative_ds3(temperature, hour_since_onset):
-    # For result_below_20
-    coef1_below_20 = 6.33 - 0.0647 * temperature - 0.000317 * (temperature ** 2)
-    coef2_below_20 = 0.111 + 0.01240 * temperature - 0.000181 * (temperature ** 2)
-    derivative_below_20 = -1.0 * coef2_below_20
-    result_below_20 = 1.0 / (1.0 + np.exp(coef1_below_20 - coef2_below_20 * hour_since_onset))
-
-    # For result_above_20
-    coef1_above_20 = -2.13 + 0.5302 * temperature - 0.009130 * (temperature ** 2)
-    coef2_above_20 = 0.405 + 0.00079 * temperature - 0.000347 * (temperature ** 2)
-    derivative_above_20 = -1.0 * coef2_above_20
-    result_above_20 = 1.0 / (1.0 + np.exp(coef1_above_20 - coef2_above_20 * hour_since_onset))
-
-    # Choose the result based on the condition
-    condition = np.mean(temperature) <= 20.0
-    result = np.where(condition, result_below_20, result_above_20)
-
-    # Choose the derivative based on the condition
-    derivative = np.where(condition, derivative_below_20, derivative_above_20)
-
-    # Multiply by the derivative of the function 1/(1+exp(u))
-    return derivative * result * (result - 1.0)
 
 
 def compute_ds1_mor(hour_since_last_rain):
@@ -141,13 +97,13 @@ def compute_ds3_mor(hour_since_last_rain, temperature):
     return result
 
 
-def compute_risk(cumulative_discharge, cumulative_ds3, host_susceptibility):
-    result = cumulative_discharge * cumulative_ds3 * host_susceptibility
+def compute_leaf_development(lai):
+    result = 1 / (-5445.5 * (lai ** 2) + 661.55 * (lai))  # TODO: looks suspicious
     return result
 
 
-def compute_leaf_development(lai):
-    result = 1 / (-5445.5 * (lai ** 2) + 661.55 * (lai))  # TODO: looks suspicious
+def compute_delta_incubation(temperature):
+    result = 1.0 / (26.4 - 1.0268 * temperature)
     return result
 
 
@@ -162,16 +118,6 @@ def get_discharge_date(df_weather_day, pat_previous, pat_current, time_previous)
     if discharge_hour_index is None: return None
     discharge_date = df_weather_day.index[discharge_hour_index]
     return discharge_date
-
-
-def get_values_last_infections(infections: list):
-    if infections:
-        time_previous = infections[-1].discharge_date
-        pat_previous = infections[-1].pat_start
-    else:
-        time_previous = datetime.datetime(1900, 1, 1, 0, 0, 0, tzinfo=pytz.utc)
-        pat_previous = 0
-    return time_previous, pat_previous
 
 
 def meets_infection_requirement(temperature, wet_hours):
@@ -205,167 +151,110 @@ class InfectionRate(nn.Module):
         self.lai = lai
         self.infection_duration = duration
         self.infection_temperature = temperature
-        #self.infection_duration, self.infection_temperature, self.wet = \
-        #    compute_duration_and_temperature_wet_period(df_weather_infection)
-        #will_infect = meets_infection_requirement(self.infection_temperature, self.infection_duration)
 
-        self.done = False
+        self.incubation = []
+        self.risk = []
+        self.infection_efficiency = []
 
-        self.s1 = 0.0
-        self.s2 = 0.0
-        self.s3 = 0.0
-
-        self.sigmoid_s1 = 0.0
-        self.sigmoid_s2 = 0.0
-        self.sigmoid_s3 = 0.0
-
-        self.s1_rate = 0.0
-        self.s2_rate = 0.0
-        self.s3_rate = 0.0
-
-        self.hours_progress = []
-
-        self.s1_sigmoid_progress = []
-        self.s2_sigmoid_progress = []
-        self.s3_sigmoid_progress = []
-
-        self.s0_progress = []
-        self.s1_progress = []
-        self.s2_progress = []
-        self.s3_progress = []
-        self.total_population_progress = []
-
-        self.s1_rate_progress = []
-        self.s2_rate_progress = []
-        self.s3_rate_progress = []
-
-        self.mor1_progress = []
-        self.mor2_progress = []
-        self.mor3_progress = []
-
-        self.has_reached_s1 = 0.0
-        self.has_reached_s2 = 0.0
-        self.has_reached_s3 = 0.0
-
-        self.has_reached_s1_progress = []
-        self.has_reached_s2_progress = []
-        self.has_reached_s3_progress = []
-
-        self.dep = []
-        self.ger = []
-        self.app = []
-
-        self.s2_fake = 1.0
-        self.s2_fake_progress = []
+        self.hours = []
+        self.s1_sigmoid = []
+        self.s2_sigmoid = []
+        self.s3_sigmoid = []
+        self.s1 = []
+        self.s2 = []
+        self.s3 = []
+        self.total_population = []
+        self.mor0 = []
+        self.mor1 = []
+        self.mor2 = []
+        self.mor3 = []
 
     def progress(self, df_weather_day):
-        if self.done: return
-        hours = df_weather_day.index
-        hours_since_onset = ((hours - self.discharge_date).total_seconds() / 3600).to_numpy()
-        self.hours_progress.extend(hours_since_onset)
-        if hours_since_onset[-1] > self.infection_duration:
-            self.done = True
-        temperatures = df_weather_day['temperature_2m'].to_numpy()
-        rains = df_weather_day['precipitation'].to_numpy()
-        humidities = df_weather_day['relative_humidity_2m'].to_numpy()
-        deposition_rates = compute_deposition_rate(rains, self.lai.value).numpy()
-        hours_since_rain = items_since_last_true(
-            is_rain_event(df_weather_day))  # issue: past 24 hours not taken into account
+        temperatures = df_weather_day["temperature_2m"].to_numpy()
 
-        sigmoid_s0 = 1.0 - compute_ds1(self.infection_temperature, hours_since_onset)
-        sigmoid_s1 = compute_ds1(self.infection_temperature, hours_since_onset)
-        sigmoid_s2 = compute_ds2(self.infection_temperature, hours_since_onset)
-        sigmoid_s3 = compute_ds3(self.infection_temperature, hours_since_onset)
+        day = df_weather_day.index.date[0]
+        delta_incubation = compute_delta_incubation(np.mean(temperatures))
+        self.incubation.append((day, delta_incubation))
 
-        s3 = sigmoid_s1 * sigmoid_s2 * sigmoid_s3
-        s2 = sigmoid_s1 * sigmoid_s2 - s3
-        s1 = sigmoid_s1 - (s2 + s3)
-        s0 = sigmoid_s0
+        if not self.terminated():
+            hours = df_weather_day.index
+            hours_since_onset = ((hours - self.discharge_date).total_seconds() / 3600).to_numpy()
+            self.hours.extend(hours_since_onset)
 
-        #self.s0_progress.append(s0)
-        #self.s1_progress.append(s1)
-        #self.s2_progress.append(s2)
-        #self.s3_progress.append(s3)
+            rains = df_weather_day['precipitation'].to_numpy()
+            humidities = df_weather_day['relative_humidity_2m'].to_numpy()
+            deposition_rates = compute_deposition_rate(rains, self.lai.value).numpy()
 
-        dm1 = compute_ds1_mor(hours_since_rain)
-        dm2 = compute_ds2_mor(hours_since_rain, temperatures, humidities)
-        dm3 = compute_ds3_mor(hours_since_rain, temperatures)
+            hours_since_rain = items_since_last_true(is_rain_event(df_weather_day)) # TODO: take past 24 hours into account
 
-        total_population = self.total_population_progress[-1] if self.total_population_progress else 1.0
-        total_mortality = dm1 * s1 + dm2 * s2 + dm3 * s3
-        total_survival = total_population * np.cumprod(1 - total_mortality)
-        self.total_population_progress.extend(total_survival)
+            sigmoid_s1 = compute_ds1(self.infection_temperature, hours_since_onset)
+            sigmoid_s2 = compute_ds2(self.infection_temperature, hours_since_onset)
+            sigmoid_s3 = compute_ds3(self.infection_temperature, hours_since_onset)
 
-        self.mor1_progress.extend(dm1 * s1)
-        self.mor2_progress.extend(dm2 * s2)
-        self.mor3_progress.extend(dm3 * s3)
+            s3 = sigmoid_s1 * sigmoid_s2 * sigmoid_s3
+            s2 = sigmoid_s1 * sigmoid_s2 - s3
+            s1 = sigmoid_s1 - (s2 + s3)
 
-        for temperature, hour_since_onset, rain, humidity, deposition_rate, hour_since_rain in \
-                zip(temperatures, hours_since_onset, rains, humidities, deposition_rates, hours_since_rain):
-            deposition_rate = 1.0  # TODO: remove
+            self.s1_sigmoid.extend(sigmoid_s1)
+            self.s2_sigmoid.extend(sigmoid_s2)
+            self.s3_sigmoid.extend(sigmoid_s3)
 
-            # for each step compute:
-            # fraction_{ds1,ds2,ds3} under no_mortality assumption
-            # compute mortality for {ds1,ds2,ds3}
-            # posthoc subtract died_population
+            self.s1.extend(s1)
+            self.s2.extend(s2)
+            self.s3.extend(s3)
 
-            dm1 = compute_ds1_mor(hour_since_rain)
-            dm2 = compute_ds2_mor(hour_since_rain, temperature, humidity)
-            dm3 = compute_ds3_mor(hour_since_rain, temperature)
+            delta_s1 = compute_derivative_ds1(self.infection_temperature, hours_since_onset)
+            s1_not_deposited = delta_s1 * (1-deposition_rates)
 
-            if True:  # TODO: remove
-                dm1, dm2, dm3 = 0, 0, 0
+            dm1 = compute_ds1_mor(hours_since_rain)
+            dm2 = compute_ds2_mor(hours_since_rain, temperatures, humidities)
+            dm3 = compute_ds3_mor(hours_since_rain, temperatures)
 
-            mor1 = dm1 * self.s1
-            mor2 = dm2 * self.s2
-            mor3 = dm3 * self.s3
+            total_population = self.total_population[-1] if self.total_population else 1.0
+            total_mortality = dm1 * s1 + dm2 * s2 + dm3 * s3
+            total_survival = total_population * np.cumprod(1 - total_mortality)
+            total_survival = total_survival - np.cumsum(s1_not_deposited)
+            self.total_population.extend(total_survival)
 
-            self.sigmoid_s1 = compute_ds1(self.infection_temperature, hour_since_onset)
-            ds1 = compute_derivative_ds1(self.infection_temperature, hour_since_onset)
-            dep = ds1 * deposition_rate
-            self.has_reached_s1 = self.has_reached_s1 + dep
+            self.mor0.extend(s1_not_deposited)
+            self.mor1.extend(dm1 * s1)
+            self.mor2.extend(dm2 * s2)
+            self.mor3.extend(dm3 * s3)
 
-            self.sigmoid_s2 = compute_ds2(self.infection_temperature, hour_since_onset)
-            ds2 = compute_derivative_ds2(self.infection_temperature, hour_since_onset)
-            ger = ds2 * self.sigmoid_s1 + self.sigmoid_s2 * ds1  # product rule
-            self.has_reached_s2 = self.has_reached_s2 + ger
+            delta_infection_efficiency = self.get_infection_efficiency()
+            self.infection_efficiency.append((day, delta_infection_efficiency))
 
-            self.sigmoid_s3 = compute_ds3(self.infection_temperature, hour_since_onset)
-            ds3 = compute_derivative_ds3(self.infection_temperature, hour_since_onset)
-            app = ds3 * self.sigmoid_s1 * self.sigmoid_s2 + self.sigmoid_s3 * ger
-            self.has_reached_s3 = self.has_reached_s3 + app
+            delta_risk = self.compute_delta_risk()
+            cumulative_risk = self.risk[-1][1] + delta_risk if self.risk else delta_risk
+            self.risk.append((day, cumulative_risk))
 
-            self.s1_rate = dep - ger
-            self.s2_rate = ger - app
-            self.s3_rate = app
+    def get_infection_efficiency(self):
+        result = self.total_population[-1] * self.s3[-1]
+        return result
 
-            self.dep.append(dep)
-            self.ger.append(ger)
-            self.app.append(app)
+    def compute_delta_risk(self):
+        result = self.get_infection_efficiency() * (self.pat_start - self.pat_previous)
+        return result
 
-            self.s1 = self.s1 + self.s1_rate
-            self.s2 = self.s2 + self.s2_rate
-            self.s3 = self.s3 + self.s3_rate
+    def terminated(self):
+        return bool(self.hours) and self.hours[-1] > self.infection_duration
 
-            self.s2_fake = self.s2_fake - app
-            self.s2_fake_progress.append(self.s2_fake)
 
-            self.s1_progress.append(self.s1)
-            self.s2_progress.append(self.s2)
-            self.s3_progress.append(self.s3)
+def get_values_last_infections(infections: list[InfectionRate]):
+    if infections:
+        time_previous = infections[-1].discharge_date
+        pat_previous = infections[-1].pat_start
+    else:
+        time_previous = datetime.datetime(1900, 1, 1, 0, 0, 0, tzinfo=pytz.utc)
+        pat_previous = 0
+    return time_previous, pat_previous
 
-            self.s1_rate_progress.append(self.s1_rate)
-            self.s2_rate_progress.append(self.s2_rate)
-            self.s3_rate_progress.append(self.s3_rate)
 
-            self.s1_rate = 0.0
-            self.s2_rate = 0.0
-            self.s3_rate = 0.0
-
-            self.s1_sigmoid_progress.append(self.sigmoid_s1)
-            self.s2_sigmoid_progress.append(self.sigmoid_s2)
-            self.s3_sigmoid_progress.append(self.sigmoid_s3)
-
-            self.has_reached_s1_progress.append(self.has_reached_s1)
-            self.has_reached_s2_progress.append(self.has_reached_s2)
-            self.has_reached_s3_progress.append(self.has_reached_s3)
+def get_risk(infections: list[InfectionRate], date):
+    risks = []
+    for infection in infections:
+        for (risk_day, risk_score) in infection.risk:
+            if risk_day == date:
+                risks.append(risk_score.item())
+    result = np.sum(risks) if len(risks) != 0 else 0
+    return result

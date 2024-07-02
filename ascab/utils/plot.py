@@ -28,17 +28,16 @@ def plot_results(results_df, variables=None):
     # Calculate the day number since April 1st
     results_df['DayNumber'] = (results_df['Date'] - closest_april_first).dt.days
 
-
     # Iterate over each variable and create a subplot for it
     for i, variable in enumerate(variables):
         ax = axes[i] if num_variables > 1 else axes  # If only one variable, axes is not iterable
-        ax.plot(results_df['Date'], results_df[variable], label=variable)
+        ax.step(results_df['Date'], results_df[variable], label=variable, where='post')
         ax.set_ylabel(f'{variable}')
         ax.legend()
 
         if variable == 'LeafWetness':
             ax.fill_between(results_df['Date'], results_df[variable], where=(results_df[variable] >= 0), color='blue',
-                            alpha=0.3)
+                            alpha=0.3, step="post")
 
         if variable == 'Precipitation':
             ax.axhline(y=0.2, color='red', linestyle='--')
@@ -71,7 +70,6 @@ def plot_results(results_df, variables=None):
             # Adjust tick label rotation and alignment
             secax.tick_params(axis='x', labelrotation=0, direction='in')
 
-
     plt.xlabel('Date')
     plt.suptitle('Model Values Over Time')
     plt.xticks(rotation=45)
@@ -82,31 +80,21 @@ def plot_results(results_df, variables=None):
 def plot_infection(infection : InfectionRate, debug=False):
     fig, ax1 = plt.subplots(figsize=(10, 6))  # Create figure and axis for the first plot
 
-    ax1.plot(infection.hours_progress, infection.s1_rate_progress, linestyle='dotted', label='r1', color='blue')
-    ax1.plot(infection.hours_progress, infection.s2_rate_progress, linestyle='dotted', label='r2', color='purple')
-    ax1.plot(infection.hours_progress, infection.s3_rate_progress, linestyle='dotted', label='r3', color='green')
+    ax1.plot(infection.hours, infection.s1_sigmoid, linestyle='dotted', label='sigmoid1', color='blue')
+    ax1.plot(infection.hours, infection.s2_sigmoid, linestyle='dotted', label='sigmoid2', color='purple')
+    ax1.plot(infection.hours, infection.s3_sigmoid, linestyle='dotted', label='sigmoid3', color='green')
 
-    #ax1.plot(infection.s1_sigmoid_progress, linestyle='dashdot', label='sig1', color='blue')
-    #ax1.plot(infection.s2_sigmoid_progress, linestyle='dashdot', label='sig2', color='purple')
-    #ax1.plot(infection.s3_sigmoid_progress, linestyle='dashdot', label='sig3', color='green')
+    ax1.plot(infection.hours, infection.s1, label='s1', linestyle='solid', color='blue')
+    ax1.plot(infection.hours, infection.s2, label='s2', linestyle='solid', color='purple')
+    ax1.plot(infection.hours, infection.s3, label='s3', linestyle='solid', color='green')
+    ax1.plot(infection.hours, infection.total_population, label='population', linestyle='solid', color='yellow')
 
-    ax1.plot(infection.hours_progress, infection.mor1_progress, linestyle='dashed', label='mor1', color='blue')
-    ax1.plot(infection.hours_progress, infection.mor2_progress, linestyle='dashed', label='mor2', color='purple')
-    ax1.plot(infection.hours_progress, infection.mor3_progress, linestyle='dashed', label='mor3', color='green')
-
-    ax1.plot(infection.hours_progress, infection.has_reached_s1_progress, linestyle='dashed', label='has_reached_s1', color='blue')
-    ax1.plot(infection.hours_progress, infection.has_reached_s2_progress, linestyle='dashed', label='has_reached_s2', color='purple')
-    ax1.plot(infection.hours_progress, infection.has_reached_s3_progress, linestyle='dashed', label='has_reached_s3', color='green')
-
-    ax1.plot(infection.hours_progress, infection.s1_progress, label='s1', linestyle='solid', color='blue')
-    ax1.plot(infection.hours_progress, infection.s2_progress, label='s2', linestyle='solid', color='purple')
-    ax1.plot(infection.hours_progress, infection.s3_progress, label='s3', linestyle='solid', color='green')
-
-    ax1.plot(infection.hours_progress, infection.total_population_progress, label='pop', linestyle='solid', color='yellow')
-
-    total = np.sum([infection.s1_progress, infection.s2_progress, infection.s3_progress], axis=0)
-    ax1.plot(infection.hours_progress, total, label='sum_s1_s2_s3', linestyle='solid', color='black')
+    total = np.sum([infection.s1, infection.s2, infection.s3], axis=0)
+    ax1.plot(infection.hours, total, label='sum_s1_s2_s3', linestyle='solid', color='black')
     ax1.axvline(x=infection.infection_duration, color="red", linestyle="--", label="duration")
+
+    ax1.step([infection.hours[index*24] for index, _ in enumerate(infection.risk)],
+             [entry[1] for entry in infection.risk], color="orange", linestyle='solid', label="risk", where='post')
 
     plt.xlabel('Time')
     plt.ylabel('Value')

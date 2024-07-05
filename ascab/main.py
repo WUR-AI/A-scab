@@ -1,4 +1,3 @@
-import numpy as np
 import pandas as pd
 import datetime
 
@@ -56,7 +55,7 @@ def run_episode(dates, df_weather):
             df_weather_infection = df_weather.loc[day.strftime("%Y-%m-%d"):end_day.strftime("%Y-%m-%d")]
             infect, infection_duration, infection_temperature = will_infect(df_weather_infection)
             if infect:
-                infections.append(InfectionRate(discharge_date, ascospore_value, pat_previous, lai, infection_duration, infection_temperature))
+                infections.append(InfectionRate(discharge_date, ascospore_value, pat_previous, lai_value, infection_duration, infection_temperature))
             else:
                 print(f'No infection {infection_duration} {infection_temperature}')
         for infection in infections:

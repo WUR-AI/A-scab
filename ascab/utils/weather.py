@@ -61,18 +61,32 @@ def compute_leaf_wetness_duration(df_weather_day):
     return result
 
 
+class WeatherSummary:
+    def __init__(self, dates, df_weather):
+        result_data = {'Date': []}
+        result_data.update({name: [] for name in self.get_variable_names()})
+
+        for day in dates:
+            result_data['Date'].append(day)
+            df_weather_day = df_weather.loc[day.strftime('%Y-%m-%d')]
+            leaf_wetness = float(compute_leaf_wetness_duration(df_weather_day))
+            has_rain_event = float(np.any(is_rain_event(df_weather_day)))
+            total_precipitation = df_weather_day['precipitation'].sum()
+            result_data['LeafWetness'].append(leaf_wetness)
+            result_data['HasRain'].append(has_rain_event)
+            result_data['Precipitation'].append(total_precipitation)
+        self.result = pd.DataFrame(result_data)
+        self.result['Date'] = pd.to_datetime(self.result["Date"])
+
+    @staticmethod
+    def get_variable_names():
+        return ['LeafWetness', 'HasRain', 'Precipitation']
+
+
 def summarize_weather(dates, df_weather):
-    result_data = {'Date': [], 'LeafWetness': [], 'HasRain': [], 'Precipitation': []}
-    for day in dates:
-        result_data['Date'].append(day)
-        df_weather_day = df_weather.loc[day.strftime('%Y-%m-%d')]
-        leaf_wetness = compute_leaf_wetness_duration(df_weather_day)
-        has_rain_event = np.any(is_rain_event(df_weather_day))
-        total_precipitation = df_weather_day['precipitation'].sum()
-        result_data['LeafWetness'].append(leaf_wetness)
-        result_data['HasRain'].append(has_rain_event)
-        result_data['Precipitation'].append(total_precipitation)
-    return pd.DataFrame(result_data)
+    ws = WeatherSummary(dates, df_weather)
+    result = ws.result
+    return result
 
 
 def is_rain_event(df_weather_day, threshold=0.2, max_gap=2):

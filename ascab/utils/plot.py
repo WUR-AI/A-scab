@@ -98,7 +98,7 @@ def plot_infection(infection : InfectionRate, debug=False):
 
     plt.xlabel('Time')
     plt.ylabel('Value')
-    plt.title(f'Infection Data {infection.infection_duration}')
+    plt.title(f'Infection Data {infection.risk[-1][1]:.2f}')
     plt.legend()
     plt.show()
 

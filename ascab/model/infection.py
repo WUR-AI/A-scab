@@ -169,7 +169,7 @@ class InfectionRate(nn.Module):
         self.mor2 = []
         self.mor3 = []
 
-    def progress(self, df_weather_day):
+    def progress(self, df_weather_day, action=0):
         temperatures = df_weather_day["temperature_2m"].to_numpy()
 
         day = df_weather_day.index.date[0]
@@ -183,7 +183,7 @@ class InfectionRate(nn.Module):
 
             rains = df_weather_day['precipitation'].to_numpy()
             humidities = df_weather_day['relative_humidity_2m'].to_numpy()
-            deposition_rates = compute_deposition_rate(rains, self.lai.value).numpy()
+            deposition_rates = compute_deposition_rate(rains, self.lai).numpy()
 
             hours_since_rain = items_since_last_true(is_rain_event(df_weather_day)) # TODO: take past 24 hours into account
 
@@ -210,10 +210,15 @@ class InfectionRate(nn.Module):
             dm2 = compute_ds2_mor(hours_since_rain, temperatures, humidities)
             dm3 = compute_ds3_mor(hours_since_rain, temperatures)
 
+            if action:
+                dm1[:] = action
+                dm2[:] = action
+                dm3[:] = action
+
             total_population = self.total_population[-1] if self.total_population else 1.0
             total_mortality = dm1 * s1 + dm2 * s2 + dm3 * s3
-            total_survival = total_population * np.cumprod(1 - total_mortality)
-            total_survival = total_survival - np.cumsum(s1_not_deposited)
+            total_survival = total_population - np.cumsum(s1_not_deposited)
+            total_survival = total_survival * np.cumprod(1 - total_mortality)
             self.total_population.extend(total_survival)
 
             self.mor0.extend(s1_not_deposited)
@@ -256,5 +261,6 @@ def get_risk(infections: list[InfectionRate], date):
         for (risk_day, risk_score) in infection.risk:
             if risk_day == date:
                 risks.append(risk_score.item())
+
     result = np.sum(risks) if len(risks) != 0 else 0
     return result

@@ -1,4 +1,3 @@
-from torch import nn
 import numpy as np
 import pytz
 import datetime
@@ -142,7 +141,7 @@ def will_infect(df_weather_infection):
     return result, infection_duration, infection_temperature
 
 
-class InfectionRate(nn.Module):
+class InfectionRate():
     def __init__(self, discharge_date, ascospore_value, previous_ascospore_value, lai, duration, temperature):
         super(InfectionRate, self).__init__()
         self.discharge_date = discharge_date
@@ -183,7 +182,7 @@ class InfectionRate(nn.Module):
 
             rains = df_weather_day['precipitation'].to_numpy()
             humidities = df_weather_day['relative_humidity_2m'].to_numpy()
-            deposition_rates = compute_deposition_rate(rains, self.lai).numpy()
+            deposition_rates = compute_deposition_rate(rains, self.lai)
 
             hours_since_rain = items_since_last_true(is_rain_event(df_weather_day)) # TODO: take past 24 hours into account
 

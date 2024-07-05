@@ -98,10 +98,10 @@ class AScabEnv(gym.Env):
         for model in self.models.values():
             model.integrate()
         for model in self.models.values():
-            self.result_data[model.__class__.__name__].append(model.value.clone())
+            self.result_data[model.__class__.__name__].append(model.value)
 
-        lai_value = self.models['LAI'].value.clone()
-        ascospore_value = self.models['AscosporeMaturation'].value.clone()
+        lai_value = self.models['LAI'].value
+        ascospore_value = self.models['AscosporeMaturation'].value
         time_previous, pat_previous = get_values_last_infections(self.infections)
         discharge_date = get_discharge_date(df_weather_day, pat_previous, ascospore_value, time_previous)
 

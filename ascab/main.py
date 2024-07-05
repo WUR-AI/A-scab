@@ -37,10 +37,10 @@ def run_episode(dates, df_weather):
         for m in models:
             m.integrate()
         for m in models:
-            result_data[m.__class__.__name__].append(m.value.clone())
+            result_data[m.__class__.__name__].append(m.value)
 
-        ascospore_value = models[1].value.clone()
-        lai_value = models[2].value.clone()
+        ascospore_value = models[1].value
+        lai_value = models[2].value
         #ldr = compute_leaf_development(lai_value)
         #result_data['LDR'].append(ldr)
 
@@ -91,4 +91,5 @@ def test_weather():
 
 
 if __name__ == "__main__":
+    df_weather = get_meteo(params, True)
     simulate()

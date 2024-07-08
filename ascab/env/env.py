@@ -2,8 +2,6 @@ import gymnasium as gym
 import pandas as pd
 from datetime import datetime, timedelta
 import numpy as np
-from gymnasium.wrappers import FlattenObservation
-
 
 from ascab.utils.weather import get_meteo, summarize_weather, WeatherSummary
 from ascab.utils.plot import plot_results, plot_infection
@@ -45,31 +43,30 @@ def get_weather_params(location=None, dates=None):
 
 class AScabEnv(gym.Env):
 
-    def __init__(self, location=None, dates=None, seed=42):
+    def __init__(self, location=None, dates=None, seed=42, verbose=False):
         if location is None:
             location = get_default_location()
         if dates is None:
             dates = get_default_dates()
-
-        self.action_space = gym.spaces.Box(0, np.inf, shape=(1,))
 
         super().reset(seed=seed)
 
         pseudothecia = PseudothecialDevelopment()
         ascospore = AscosporeMaturation(pseudothecia)
         lai = LAI()
+        self.verbose = verbose
         self.dates = tuple(datetime.strptime(date, "%Y-%m-%d").date() for date in dates)
         self.models = {type(model).__name__: model for model in [pseudothecia, ascospore, lai]}
         self.infections = []
-        self.weather = get_meteo(get_weather_params(location, dates), True)
+        self.weather = get_meteo(get_weather_params(location, dates), False)
         self.date = datetime.strptime(dates[0], '%Y-%m-%d').date()
         self.result_data = {"Date": [],
                             **{name: [] for name, _ in self.models.items()},
-                            "Ascospores": [], "Discharge": [], "Infections": [], "Risk": []}
+                            "Ascospores": [], "Discharge": [], "Infections": [], "Risk": [], "Action": [], "Reward": []}
 
         self.observation_space_model = gym.spaces.Dict({
             name: gym.spaces.Box(0, np.inf, shape=(1,), dtype=np.float32)
-            for name, _ in self.result_data.items() if name != "Date"
+            for name, _ in self.result_data.items() if name not in {"Date", "Action", "Reward"}
         })
 
         self.observation_space_weather_summary = gym.spaces.Dict({
@@ -83,7 +80,8 @@ class AScabEnv(gym.Env):
                 "weather": self.observation_space_weather_summary,
             }
         )
-        self.action_space = gym.spaces.Box(0, np.inf, shape=(1,), dtype=np.float32)
+        self.action_space = gym.spaces.Box(0, 1.0, shape=(1,), dtype=np.float32)
+        self.render_mode = 'human'
 
     def step(self, action):
         """
@@ -107,6 +105,7 @@ class AScabEnv(gym.Env):
 
         self.result_data['Discharge'].append(discharge_date is not None)
         self.result_data['Ascospores'].append(ascospore_value - pat_previous)
+        self.result_data["Action"].append(action)
 
         if discharge_date is not None:
             end_day = self.date + timedelta(days=5)
@@ -115,7 +114,7 @@ class AScabEnv(gym.Env):
             if infect:
                 self.infections.append(InfectionRate(discharge_date, ascospore_value, pat_previous, lai_value, infection_duration, infection_temperature))
             else:
-                print(f'No infection {infection_duration} {infection_temperature}')
+                if self.verbose: print(f'No infection {infection_duration} {infection_temperature}')
         for infection in self.infections:
             infection.progress(df_weather_day, action)
         self.result_data["Infections"].append(len(self.infections))
@@ -123,6 +122,8 @@ class AScabEnv(gym.Env):
         o = self._get_observation()
         r = self._get_reward()
         i = self._get_info()
+
+        self.result_data["Reward"].append(r)
 
         self.date = self.date + timedelta(days=1)
 
@@ -151,7 +152,9 @@ class AScabEnv(gym.Env):
 
     def _get_reward(self):
         risk = self.result_data["Risk"][-1]
-        return -risk
+        action = self.result_data["Action"][-1]
+        result = -risk -(action * 0.025)
+        return result
 
     def render(self):
         start_end = [self.dates[0] + timedelta(n) for n in range((self.dates[1] - self.dates[0]).days + 1)]
@@ -167,14 +170,3 @@ class AScabEnv(gym.Env):
         super().reset(seed=seed)
         self.__init__()
         return self._get_observation(), self._get_info()
-
-
-if __name__ == "__main__":
-    ascab = FlattenObservation(AScabEnv())
-    terminated = False
-    total_reward = 0.0
-    while not terminated:
-        observation, reward, terminated, truncated, info = ascab.step(1)
-        total_reward += reward
-    print(f'reward: {total_reward}')
-    ascab.render()

@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pandas as pd
 import numpy as np
+np.set_printoptions(precision=2, suppress=True)
 
 from ascab.model.infection import InfectionRate
 
@@ -71,7 +72,8 @@ def plot_results(results_df, variables=None):
             secax.tick_params(axis='x', labelrotation=0, direction='in')
 
     plt.xlabel('Date')
-    plt.suptitle('Model Values Over Time')
+    title = f"Reward: {results_df['Reward'].sum()}"
+    plt.suptitle(title)
     plt.xticks(rotation=45)
     plt.subplots_adjust(hspace=0.0)  # Adjust vertical spacing between subplots
     plt.show()

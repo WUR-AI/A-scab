@@ -60,52 +60,65 @@ class AScabEnv(gym.Env):
         self.infections = []
         self.weather = get_meteo(get_weather_params(location, dates), False)
         self.date = datetime.strptime(dates[0], '%Y-%m-%d').date()
-        self.result_data = {"Date": [],
-                            **{name: [] for name, _ in self.models.items()},
-                            "Ascospores": [], "Discharge": [], "Infections": [], "Risk": [], "Action": [], "Reward": []}
+        self.info = {"Date": [],
+                     **{name: [] for name, _ in self.models.items()},
+                     "Ascospores": [], "Discharge": [], "Infections": [], "Risk": [],
+                     **{name: [] for name in WeatherSummary.get_variable_names()},
+                     "Action": [], "Reward": []}
 
-        self.observation_space_model = gym.spaces.Dict({
-            name: gym.spaces.Box(0, np.inf, shape=(1,), dtype=np.float32)
-            for name, _ in self.result_data.items() if name not in {"Date", "Action", "Reward"}
+        self.observation_space_disease = gym.spaces.Dict({
+            name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
+            for name, _ in self.info.items()
+            if name in {"AscosporeMaturation", "PseudothecialDevelopment", "Ascospores", "Infections", "Risk"}
+        })
+
+        self.observation_space_tree = gym.spaces.Dict({
+            name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
+            for name, _ in self.info.items() if name in {"LAI"}
         })
 
         self.observation_space_weather_summary = gym.spaces.Dict({
-            name: gym.spaces.Box(0, np.inf, shape=(1,), dtype=np.float32)
-            for name in WeatherSummary.get_variable_names()
+            name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
+            for name, _ in self.info.items() if name in WeatherSummary.get_variable_names()
         })
 
         self.observation_space = gym.spaces.Dict(
             {
-                "model": self.observation_space_model,
+                "disease": self.observation_space_disease,
+                "tree": self.observation_space_tree,
                 "weather": self.observation_space_weather_summary,
             }
         )
-        self.action_space = gym.spaces.Box(0, 1.0, shape=(1,), dtype=np.float32)
+        self.action_space = gym.spaces.Box(0, 1.0, shape=(), dtype=np.float32)
         self.render_mode = 'human'
 
     def step(self, action):
         """
         Perform a single step in the Gym environment.
         """
+        self.info["Date"].append(self.date)
+
+        df_summary_weather = summarize_weather([self.date], self.weather)
+        varnames = [col for col in self.info.keys() if col in df_summary_weather.columns]
+        weather_observation = df_summary_weather[varnames].to_dict(orient="list")
+        [self.info[key].extend(value) for key, value in weather_observation.items() if key != "Date"]
 
         df_weather_day = self.weather.loc[self.date.strftime("%Y-%m-%d")]
-
-        self.result_data["Date"].append(self.date)
         for model in self.models.values():
             model.update_rate(df_weather_day)
         for model in self.models.values():
             model.integrate()
         for model in self.models.values():
-            self.result_data[model.__class__.__name__].append(model.value)
+            self.info[model.__class__.__name__].append(model.value)
 
         lai_value = self.models['LAI'].value
         ascospore_value = self.models['AscosporeMaturation'].value
         time_previous, pat_previous = get_values_last_infections(self.infections)
         discharge_date = get_discharge_date(df_weather_day, pat_previous, ascospore_value, time_previous)
 
-        self.result_data['Discharge'].append(discharge_date is not None)
-        self.result_data['Ascospores'].append(ascospore_value - pat_previous)
-        self.result_data["Action"].append(action)
+        self.info['Discharge'].append(discharge_date is not None)
+        self.info['Ascospores'].append(ascospore_value - pat_previous)
+        self.info["Action"].append(action)
 
         if discharge_date is not None:
             end_day = self.date + timedelta(days=5)
@@ -117,51 +130,48 @@ class AScabEnv(gym.Env):
                 if self.verbose: print(f'No infection {infection_duration} {infection_temperature}')
         for infection in self.infections:
             infection.progress(df_weather_day, action)
-        self.result_data["Infections"].append(len(self.infections))
-        self.result_data["Risk"].append(get_risk(self.infections, self.date))
+        self.info["Infections"].append(len(self.infections))
+        self.info["Risk"].append(get_risk(self.infections, self.date))
         o = self._get_observation()
         r = self._get_reward()
         i = self._get_info()
-
-        self.result_data["Reward"].append(r)
+        self.info["Reward"].append(r)
 
         self.date = self.date + timedelta(days=1)
 
         return o, r, self._terminated(), False, i
         
     def _get_observation(self) -> dict:
+        def generate_observation(info, observation_space_keys):
+            o = {name: np.array(value[-1], dtype=np.float32) if value else np.array(0.0, dtype=np.float32)
+                 for name, value in info.items() if name in observation_space_keys}
+            return o
 
-        model_observation = {
-            name: [value[-1]] if value else [0.0] for name, value in self.result_data.items() if name != "Date"
-        }
-        df_summary_weather = summarize_weather([self.date], self.weather)
-        varnames = list(self.observation_space_weather_summary.spaces.keys())
-        weather_observation = df_summary_weather[varnames].to_dict(orient="list")
+        disease_observation = generate_observation(self.info, self.observation_space_disease.keys())
+        tree_observation = generate_observation(self.info, self.observation_space_tree.keys())
+        weather_observation = generate_observation(self.info, self.observation_space_weather_summary.keys())
         result = {
-            "model": model_observation,
+            "disease": disease_observation,
+            "tree": tree_observation,
             "weather": weather_observation,
         }
         return result
 
     def _get_info(self):
-        result = dict()
-        return result
+        return self.info
 
     def _terminated(self):
         return self.date >= self.dates[1]
 
     def _get_reward(self):
-        risk = self.result_data["Risk"][-1]
-        action = self.result_data["Action"][-1]
+        risk = self.info["Risk"][-1]
+        action = self.info["Action"][-1]
         result = -risk -(action * 0.025)
         return result
 
     def render(self):
-        start_end = [self.dates[0] + timedelta(n) for n in range((self.dates[1] - self.dates[0]).days + 1)]
-        weather_summary = summarize_weather(start_end, self.weather)
-        df_result = pd.DataFrame(self.result_data).assign(Date=lambda x: pd.to_datetime(x["Date"]))
-        merged_df = pd.merge(df_result, weather_summary, on="Date", how="inner")
-        plot_results(merged_df)
+        df_info = pd.DataFrame(self.info).assign(Date=lambda x: pd.to_datetime(x["Date"]))
+        plot_results(df_info)
         if self.infections:
             import random
             plot_infection(random.choice(self.infections))

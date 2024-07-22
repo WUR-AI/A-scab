@@ -4,6 +4,7 @@ from ascab.utils.weather import compute_leaf_wetness_duration, is_wet
 
 
 def pseudothecial_development_has_ended(stage):
+    # Figure 2 Rossi et al.
     return stage >= 9.5
 
 
@@ -88,6 +89,7 @@ class LAI():
 
     def compute_rate(self, current_value, day, avg_temperature):
         # Calculate the daily change
+        # TODO: Definition in Rossi not trivial. We may need to incorporate number of shoots
         number_of_shoots_per_m2 = 85 #50 TODO: check
         dy_dt = 0.00008 * max(0, (avg_temperature - 4.0)) * number_of_shoots_per_m2
         # Check conditions and modify dy_dt accordingly

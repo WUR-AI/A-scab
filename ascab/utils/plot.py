@@ -5,80 +5,91 @@ import numpy as np
 from ascab.model.infection import InfectionRate
 
 
-def plot_results(results_df, variables=None):
+def plot_results(results: [dict[str, pd.DataFrame] | pd.DataFrame], variables: list[str] = None):
+    if not isinstance(results, dict):
+        results = {"": results}
+
     if variables is None:
-        variables = results_df.columns.tolist()
+        variables = list(results.values())[0].columns.tolist()
     else:
-        # Check if the provided variables exist in the DataFrame
-        missing_variables = [var for var in variables if var not in results_df.columns]
-        if missing_variables:
-            raise ValueError(f"The following variables do not exist in the DataFrame: {', '.join(missing_variables)}")
+        # Check if the provided variables exist in the DataFrames
+        for df in results.values():
+            missing_variables = [var for var in variables if var not in df.columns]
+            if missing_variables:
+                raise ValueError(
+                    f"The following variables do not exist in the DataFrame: {', '.join(missing_variables)}"
+                )
 
     # Exclude 'Date' column from variables to be plotted
     variables = [var for var in variables if var != 'Date']
     variables.reverse()  # Reverse the order of the variables
     num_variables = len(variables)
-    fig, axes = plt.subplots(num_variables, 1, figsize=(7, 4 * num_variables), sharex=True)
+    fig, axes = plt.subplots(num_variables, 1, figsize=(7, 3 * num_variables), sharex=True)
 
-    # Find the closest date to April 1st in the dataset
-    april_first = results_df['Date'] + pd.DateOffset(month=4, day=1)
-    closest_april_first = april_first[april_first <= results_df['Date']].max()
+    for index_results, (df_key, df) in enumerate(results.items()):
+        reward = df["Reward"].sum()
+        reward_string = (f"Reward: {reward.item():.2f}" if isinstance(reward, np.ndarray) and reward.size == 1
+                         else f"{reward:.2f}")
 
-    # Calculate the day number since April 1st
-    results_df['DayNumber'] = (results_df['Date'] - closest_april_first).dt.days
+        # Find the closest date to April 1st in the dataset
+        april_first = df['Date'] + pd.DateOffset(month=4, day=1)
+        closest_april_first = april_first[april_first <= df['Date']].max()
 
-    # Iterate over each variable and create a subplot for it
-    for i, variable in enumerate(variables):
-        ax = axes[i] if num_variables > 1 else axes  # If only one variable, axes is not iterable
-        ax.step(results_df['Date'], results_df[variable], label=variable, where='post')
-        ax.set_ylabel(f'{variable}')
-        ax.legend()
+        # Calculate the day number since April 1st
+        df['DayNumber'] = (df['Date'] - closest_april_first).dt.days
 
-        if variable == 'LeafWetness':
-            ax.fill_between(results_df['Date'], results_df[variable], where=(results_df[variable] >= 0), color='blue',
-                            alpha=0.3, step="post")
+        # Iterate over each variable and create a subplot for it
+        for i, variable in enumerate(variables):
+            ax = axes[i] if num_variables > 1 else axes  # If only one variable, axes is not iterable
 
-        if variable == 'Precipitation':
-            ax.axhline(y=0.2, color='red', linestyle='--')
+            if index_results == 0:
+                ax.text(0.015, 0.85, variable, transform=ax.transAxes, verticalalignment="top",horizontalalignment="left",
+                        bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round,pad=0.25'))
 
-        # Add vertical line when the variable first passes the threshold
-        thresholds = [0.016, 0.99]
-        if variable == 'AscosporeMaturation' and thresholds is not None:
-            for threshold in thresholds:
-                exceeding_indices = results_df[results_df[variable] > threshold].index
-                if len(exceeding_indices) > 0:
-                    first_pass_index = exceeding_indices[0]
-                    x_coordinate = results_df.loc[first_pass_index, 'Date']  # Get the corresponding date value
-                    ax.axvline(x=x_coordinate, color='red', linestyle='--', label=f'Threshold ({threshold})')
+            ax.step(df['Date'], df[variable], label=f'{df_key} ({reward_string})', where='post')
+            if i == 0: ax.legend()
 
-        if i == num_variables - 1:  # Only add secondary x-axis to the bottom subplot
-            # Add secondary x-axis with limited ticks starting from day 0
-            tick_interval = 25
-            secax = ax.secondary_xaxis('bottom', color='grey')
+            if variable == 'LeafWetness':
+                ax.fill_between(df['Date'], df[variable], where=(df[variable] >= 0), color='blue', alpha=0.3, step="post")
 
-            # Determine the closest date to April 1st to start the ticks
-            start_date = pd.Timestamp('2011-04-01')
-            start_index = results_df.index[results_df['Date'] >= start_date][0]
+            if variable == 'Precipitation':
+                ax.axhline(y=0.2, color='red', linestyle='--')
 
-            # Generate tick locations and labels based on the start_index and tick_interval
-            tick_locations = results_df['Date'].iloc[start_index::tick_interval]
-            tick_labels = results_df['DayNumber'].iloc[start_index::tick_interval]
+            # Add vertical line when the variable first passes the threshold
+            thresholds = [0.016, 0.99]
+            if variable == 'AscosporeMaturation' and thresholds is not None:
+                for threshold in thresholds:
+                    exceeding_indices = df[df[variable] > threshold].index
+                    if len(exceeding_indices) > 0:
+                        first_pass_index = exceeding_indices[0]
+                        x_coordinate = df.loc[first_pass_index, 'Date']  # Get the corresponding date value
+                        ax.axvline(x=x_coordinate, color='red', linestyle='--', label=f'Threshold ({threshold})')
 
-            secax.set_xticks(tick_locations)
-            secax.set_xticklabels(tick_labels)
-            # Adjust tick label rotation and alignment
-            secax.tick_params(axis='x', labelrotation=0, direction='in')
+            if i == num_variables - 1:  # Only add secondary x-axis to the bottom subplot
+                # Add secondary x-axis with limited ticks starting from day 0
+                tick_interval = 25
+                secax = ax.secondary_xaxis('bottom', color='grey')
+
+                # Determine the closest date to April 1st to start the ticks
+                start_date = pd.Timestamp('2011-04-01')
+                start_index = df.index[df['Date'] >= start_date][0]
+
+                # Generate tick locations and labels based on the start_index and tick_interval
+                tick_locations = df['Date'].iloc[start_index::tick_interval]
+                tick_labels = df['DayNumber'].iloc[start_index::tick_interval]
+
+                secax.set_xticks(tick_locations)
+                secax.set_xticklabels(tick_labels)
+                # Adjust tick label rotation and alignment
+                secax.tick_params(axis='x', labelrotation=0, direction='in')
 
     plt.xlabel('Date')
-    reward = results_df['Reward'].sum()
-    title = (f"Reward: {reward.item():.2f}" if isinstance(reward, np.ndarray) and reward.size == 1 else f"{reward:.2f}")
-    plt.suptitle(title)
     plt.xticks(rotation=45)
-    plt.subplots_adjust(hspace=0.0)  # Adjust vertical spacing between subplots
+    plt.tight_layout()
     plt.show()
 
 
-def plot_infection(infection : InfectionRate, debug=False):
+def plot_infection(infection: InfectionRate):
     fig, ax1 = plt.subplots(figsize=(10, 6))  # Create figure and axis for the first plot
 
     ax1.plot(infection.hours, infection.s1_sigmoid, linestyle='dotted', label='sigmoid1', color='blue')
@@ -92,10 +103,18 @@ def plot_infection(infection : InfectionRate, debug=False):
 
     total = np.sum([infection.s1, infection.s2, infection.s3], axis=0)
     ax1.plot(infection.hours, total, label='sum_s1_s2_s3', linestyle='solid', color='black')
+    ax1.axvline(x=0, color="red", linestyle="--")
     ax1.axvline(x=infection.infection_duration, color="red", linestyle="--", label="duration")
+    ax1.step([item for sublist in [infection.hours[index*24: (index+1)*24] for index, _ in enumerate(infection.risk)] for item in sublist],
+             [item for sublist in [[entry[1]] * 24 for entry in infection.risk] for item in sublist],
+             color="orange", linestyle='solid', label="cumulative risk", where='post')
 
-    ax1.step([infection.hours[index*24] for index, _ in enumerate(infection.risk)],
-             [entry[1] for entry in infection.risk], color="orange", linestyle='solid', label="risk", where='post')
+    dates = infection.discharge_date + pd.to_timedelta(infection.hours, unit="h")
+    unique_dates = pd.date_range(start=dates[0], end=dates[-1], freq="D")
+    for i, unique_date in enumerate(unique_dates):
+        ax1.axvline(x=infection.hours[i*24], color="grey", linestyle="--", linewidth=0.8)
+        ax1.text(infection.hours[i*24]+0.1, ax1.get_ylim()[1], unique_date.strftime("%Y-%m-%d"),
+                 color="grey", ha="left", va="top", rotation=90, fontsize=9)
 
     plt.xlabel('Time')
     plt.ylabel('Value')
@@ -104,7 +123,7 @@ def plot_infection(infection : InfectionRate, debug=False):
     plt.show()
 
 
-def plot_precipitation_with_rain_event(df_hourly, day):
+def plot_precipitation_with_rain_event(df_hourly: pd.DataFrame, day: pd.Timestamp):
     # Filter the DataFrame for the specific day
     df_day = df_hourly[df_hourly['Hourly Date'].dt.date == day.date()]
     # Plot the precipitation

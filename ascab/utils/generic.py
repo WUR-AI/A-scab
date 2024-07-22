@@ -13,7 +13,7 @@ def items_since_last_true(array):
     return result
 
 
-def fill_gaps(arr, max_gap=2):
+def fill_gaps(arr, max_gap: int = 2):
     # Initialize an array to store lengths of false series
     false_series_lengths = np.zeros_like(arr, dtype=int)
 

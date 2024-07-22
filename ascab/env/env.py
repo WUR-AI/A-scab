@@ -2,6 +2,7 @@ import gymnasium as gym
 import pandas as pd
 from datetime import datetime, timedelta
 import numpy as np
+import random
 
 from ascab.utils.weather import get_meteo, summarize_weather, WeatherSummary
 from ascab.utils.plot import plot_results, plot_infection
@@ -17,7 +18,7 @@ def get_default_dates():
     return "2011-02-01", "2011-08-01"
 
 
-def get_weather_params(location=None, dates=None):
+def get_weather_params(location: tuple = None, dates: list[str] = None):
     if location is None:
         location = get_default_location()
     if dates is None:
@@ -42,8 +43,8 @@ def get_weather_params(location=None, dates=None):
 
 
 class AScabEnv(gym.Env):
-
-    def __init__(self, location=None, dates=None, seed=42, verbose=False):
+    # See figure 2 in Rossi et al. for an overview
+    def __init__(self, location: tuple = None, dates: list[str] = None, seed: int = 42, verbose: bool = False):
         if location is None:
             location = get_default_location()
         if dates is None:
@@ -134,7 +135,7 @@ class AScabEnv(gym.Env):
         self.info["Risk"].append(get_risk(self.infections, self.date))
         o = self._get_observation()
         r = self._get_reward()
-        i = self._get_info()
+        i = self.get_info()
         self.info["Reward"].append(r)
 
         self.date = self.date + timedelta(days=1)
@@ -157,8 +158,11 @@ class AScabEnv(gym.Env):
         }
         return result
 
-    def _get_info(self):
-        return self.info
+    def get_info(self, to_dataframe: bool = False):
+        result = self.info
+        if to_dataframe:
+            result = pd.DataFrame(self.info).assign(Date=lambda x: pd.to_datetime(x["Date"]))
+        return result
 
     def _terminated(self):
         return self.date >= self.dates[1]
@@ -170,13 +174,14 @@ class AScabEnv(gym.Env):
         return result
 
     def render(self):
-        df_info = pd.DataFrame(self.info).assign(Date=lambda x: pd.to_datetime(x["Date"]))
+        df_info = self.get_info(to_dataframe=True)
         plot_results(df_info)
+
         if self.infections:
-            import random
+            plot_infection(max(self.infections, key=lambda x: x.risk[-1][1]))
             plot_infection(random.choice(self.infections))
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.__init__()
-        return self._get_observation(), self._get_info()
+        return self._get_observation(), self.get_info()

@@ -3,13 +3,12 @@ import requests_cache
 from retry_requests import retry
 import pandas as pd
 import numpy as np
-import torch
 from scipy.ndimage import label
 
 from ascab.utils.generic import fill_gaps
 
 
-def get_meteo(params, verbose=False):
+def get_meteo(params, verbose: bool = False):
     url = "https://archive-api.open-meteo.com/v1/archive"
 
     # Setup the Open-Meteo API client with cache and retry on error
@@ -83,20 +82,20 @@ class WeatherSummary:
         return ['LeafWetness', 'HasRain', 'Precipitation']
 
 
-def summarize_weather(dates, df_weather):
+def summarize_weather(dates, df_weather: pd.DataFrame):
     ws = WeatherSummary(dates, df_weather)
     result = ws.result
     return result
 
 
-def is_rain_event(df_weather_day, threshold=0.2, max_gap=2):
-    precipitation = torch.tensor(df_weather_day['precipitation'].to_numpy())
+def is_rain_event(df_weather_day: pd.DataFrame, threshold: float = 0.2, max_gap: int =2):
+    precipitation = df_weather_day['precipitation'].to_numpy()
     rain = precipitation >= threshold
     result = fill_gaps(rain, max_gap=max_gap)
     return result
 
 
-def compute_duration_and_temperature_wet_period(df_weather_infection):
+def compute_duration_and_temperature_wet_period(df_weather_infection: pd.DataFrame):
     wet = df_weather_infection.apply(lambda row: is_wet(row['precipitation'], row['vapour_pressure_deficit']), axis=1).values
     temperature = df_weather_infection['temperature_2m'].to_numpy()
     wet_filled = fill_gaps(wet, max_gap=4)

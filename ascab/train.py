@@ -1,6 +1,5 @@
 from stable_baselines3 import PPO
 from gymnasium.wrappers import FlattenObservation, FilterObservation
-import pandas as pd
 from ascab.utils.plot import plot_results
 from ascab.env.env import AScabEnv
 
@@ -18,7 +17,7 @@ def rl_agent(n_steps=5000):
         observation, reward, terminated, _, _ = ascab.step(action_)
         total_reward += reward
     print(f"reward: {total_reward:.3f}")
-    #ascab.render()
+    ascab.render()
     return ascab
 
 
@@ -32,7 +31,7 @@ def cheating_agent():
         _, reward, terminated, _, _ = ascab.step(action)
         total_reward += reward
     print(f"reward: {total_reward}")
-    #ascab.render()
+    ascab.render()
     return ascab
 
 
@@ -50,16 +49,13 @@ def zero_agent():
 
 if __name__ == "__main__":
     print('zero agent')
-    ascab_zero = zero_agent() #-0.634
-    #print("cheating agent")
-    #ascab_cheating = cheating_agent()
-    #ascab_rl = rl_agent()
+    ascab_zero = zero_agent()  # -0.634
+    print("cheating agent")
+    ascab_cheating = cheating_agent()
+    print("rl agent")
+    ascab_rl = rl_agent()
 
-    #plot_results({"zero": ascab_zero.get_info(to_dataframe=True),
-    #              "cheater": ascab_cheating.get_info(to_dataframe=True)})
-
-    #plot_results([pd.DataFrame(ascab_zero.info).assign(Date=lambda x: pd.to_datetime(x["Date"])),
-    #              pd.DataFrame(ascab_cheating.info).assign(Date=lambda x: pd.to_datetime(x["Date"])),
-    #              pd.DataFrame(ascab_rl.info).assign(Date=lambda x: pd.to_datetime(x["Date"]))])
-
+    plot_results({"zero": ascab_zero.get_info(to_dataframe=True),
+                  "cheater": ascab_cheating.get_info(to_dataframe=True),
+                  "rl_agent": ascab_rl.get_info(to_dataframe=True)})
 

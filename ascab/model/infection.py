@@ -252,9 +252,9 @@ class InfectionRate():
     (!) Note that the sigmoids of stage3 may not have reached to 100% yet, as infection duration is not a variable in these sigmoids
 
     Mortality is computed as follows (for each hour):
-      (1) The distribution of spores over the stages (i.e. fractions) is computed under a no-normality assumption
+      (1) The distribution of spores over the stages (i.e. fractions) is computed under a no-mortality assumption
       (2) The stage-specific mortality is computed
-      (3) Stage-specific mortality (i.e. (2) is multiplied with the fraction of that stage (i.e. 1), resulting in total death
+      (3) Stage-specific mortality (i.e. (2)) is multiplied with the fraction of that stage (i.e. (1)), resulting in total death
       (4) The population that died is subtracted from the population that has survived
 
     A similar approach is taken for the deposition of spores (for each hour):

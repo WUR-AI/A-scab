@@ -68,7 +68,7 @@ def compute_ds1(temperature: float, hour_since_onset: np.ndarray[1, np.int_]):
     the computed dose for each hour since onset. Hours that are negative are set to 0 in the resulting array.
 
     Parameters:
-    - temperature (float): The temperature in degrees Celsius. It affects the rate of ascospore dose ejection.
+    - temperature (float): The temperature in degrees Celsius, averaged over the duration of a discharge event
     - hour_since_onset (np.ndarray[np.int_]): A 1-dimensional NumPy array containing the number of hours since onset.
       Each element should be an integer representing the time in hours.
 
@@ -87,18 +87,39 @@ def compute_ds1(temperature: float, hour_since_onset: np.ndarray[1, np.int_]):
 def compute_derivative_ds1(temperature: float, hour_since_onset: np.ndarray[1, np.int_]) -> np.ndarray[1, np.float64]:
     """
     Computes the derivative of the ascospore dose ejection function (Rossi et al., page 304, equation 11)
+
+    Parameters:
+    - temperature (float): The temperature in degrees Celsius, averaged over the duration of a discharge event
+    - hour_since_onset (np.ndarray[np.int_]): A 1-dimensional NumPy array containing the number of hours since onset.
+      Each element should be an integer representing the time in hours.
+
+    Returns:
+    - np.ndarray: A 1-dimensional NumPy array of the same shape as `hour_since_onset`, where each element
+      represents the derivative of the computed ascospore dose for the corresponding hour since onset.
     """
+
     u = 2.999 - 0.067 * temperature * hour_since_onset
     result = 0.067 * temperature * np.exp(u) / ((1.0 + np.exp(u)) ** 2)
-    # result = np.where(hour_since_onset >= 0, result, 0.0)
+    # Note that we omit the clipping done in compute_ds1 in order to arrive at the same ds1 value at onset
+
     return result
 
 
-def compute_sdl_wet(rain, lai: float = 1.0, height: float = 0.5) -> np.ndarray[1, np.float64]:
+def compute_sdl_wet(rain: np.ndarray[1, np.float64], lai: float = 1.0, height: float = 0.5) -> np.ndarray[1, np.float64]:
     """
-    Computes wet deposition of ascospores (Rossi et al., page 304, equation 13-14)
-    see also Rossi et al. IOBC/WPRS Bulletin 29, 53–58.
+    Computes wet deposition of ascospores (Rossi et al., page 304, equations 13-14)
+
+    Parameters:
+    - rain (np.ndarray[np.float64]): Hourly rainfall in mm
+    - lai (float): Leaf area index
+    - height (float): Height above the ground of the lowest leaves in m
+
+    Returns:
+    - np.ndarray: Part of ascospores deposited on apple leaves deposited by wet deposition
+
+    See also Rossi et al. IOBC/WPRS Bulletin 29, 53–58.
     """
+
     lambda_h = (1.0 / (1.0 + np.exp(2.575 - 0.987 * lai * (5.022 * (rain ** 0.063)))))
     result = (1.017 * 0.374 ** height) * lambda_h
     return result
@@ -107,19 +128,35 @@ def compute_sdl_wet(rain, lai: float = 1.0, height: float = 0.5) -> np.ndarray[1
 def compute_sdl_dry(lai: float = 1.0) -> float:
     """
     Computes dry deposition of ascospores (Rossi et al., page 304, equation 15)
+
+    Parameters:
+    - lai (float): Leaf area index
+
+    Returns:
+    - float: Part of ascospores deposited on apple leaves deposited by dry deposition
     """
+
     result = 0.594 - (0.643 * 0.372 ** lai)
     return result
 
 
 def compute_deposition_rate(rain: np.ndarray[1, np.float64], lai: float = 1.0, height: float = 0.5, do_clip: bool = True):
     """
-    Computes wet deposition of ascospores (Rossi et al., page 304, equation 15)
+    Computes proportion of ascospores deposited on apple leaves (Rossi et al., page 304, equation 12)
+
+    Parameters:
+    - rain (np.ndarray[np.float64]): Hourly rainfall in mm
+    - lai (float): Leaf area index
+    - height (float): Height above the ground of the lowest leaves in m
+    - do_clip (bool):  Clip to ensure that the fraction remains between 0 and 1, as it may otherwise exceed this range.
+
+    Returns:
+    - np.ndarray[np.float64]: Part of ascospores deposited on apple leaves deposited
     """
+
     ds_wet = compute_sdl_wet(rain, lai, height)  #[0.04-0.622]
     ds_dry = compute_sdl_dry(lai)  #max 0.594
     ds_sum = ds_wet + ds_dry
-    # TODO: the sum may exceed one
     if do_clip:
         ds_sum = np.clip(ds_sum, None, 1.0)
     return ds_sum
@@ -127,8 +164,21 @@ def compute_deposition_rate(rain: np.ndarray[1, np.float64], lai: float = 1.0, h
 
 def compute_ds2(temperature: float, hour_since_onset: np.ndarray[1, np.int_]) -> np.ndarray[1, np.float64]:
     """
-    Computes stage2 (Rossi et al., page 305, equation 16-17)
+    Computes fraction of ascospores in stage2 (i.e. germinated), following Rossi et al., page 305, equations 16-17
+
+    This function uses the formulas from Rossi et al., page 305, equations 16-17, to calculate the fraction of ascospore
+    that has reached stage 2 (i.e. germinated), as a function of temperature and the number of hours since onset.
+
+    Parameters:
+    - temperature (float): The temperature in degrees Celsius, averaged over the duration of an infection event
+    - hour_since_onset (np.ndarray[np.int_]): A 1-dimensional NumPy array containing the number of hours since onset.
+      Each element should be an integer representing the time in hours.
+
+    Returns:
+    - np.ndarray: A 1-dimensional NumPy array of the same shape as `hour_since_onset`, where each element
+      represents the fraction of ascospore that has reached stage 2
     """
+
     result_below_20 = 1.0 / (1.0 + np.exp((5.23 - 0.1226 * temperature + 0.0014 * (temperature ** 2)) - (
             0.093 + 0.0112 * temperature - 0.000122 * (temperature ** 2)) * hour_since_onset))
     result_above_20 = 1.0 / (1.0 + np.exp((-2.97 + 0.4297 * temperature - 0.0061 * (temperature ** 2)) - (
@@ -139,8 +189,21 @@ def compute_ds2(temperature: float, hour_since_onset: np.ndarray[1, np.int_]) ->
 
 def compute_ds3(temperature: float, hour_since_onset: np.ndarray[1, np.int_]) -> np.ndarray[1, np.float64]:
     """
-    Computes stage3 (Rossi et al., page 305, equation 18-19)
+    Computes fraction of ascospores in stage3 (i.e. with appressorium), following Rossi et al., page 305, equations 18-19
+
+    This function uses the formulas from Rossi et al., page 305, equations 18-19, to calculate the fraction of ascospore
+    that has reached stage 3 (i.e. with appressorium), as a function of temperature and the number of hours since onset.
+
+    Parameters:
+    - temperature (float): The temperature in degrees Celsius, averaged over the duration of an infection event
+    - hour_since_onset (np.ndarray[np.int_]): A 1-dimensional NumPy array containing the number of hours since onset.
+      Each element should be an integer representing the time in hours.
+
+    Returns:
+    - np.ndarray: A 1-dimensional NumPy array of the same shape as `hour_since_onset`, where each element
+      represents the fraction of ascospore that has reached stage 3
     """
+
     result_below_20 = 1.0 / (1.0 + np.exp((6.33 - 0.0647 * temperature - 0.000317 * (temperature ** 2)) - (
             0.111 + 0.01240 * temperature - 0.000181 * (temperature ** 2)) * hour_since_onset))
     result_above_20 = 1.0 / (1.0 + np.exp((-2.13 + 0.5302 * temperature - 0.009130 * (temperature ** 2)) - (
@@ -151,17 +214,39 @@ def compute_ds3(temperature: float, hour_since_onset: np.ndarray[1, np.int_]) ->
 
 def compute_ds1_mor(hour_since_last_rain: np.ndarray[1, np.int_]):
     """
-    Computes mortality stage1 (Rossi et al., page 305, equation 20)
+    Computes mortality rate of ascospores in stage1 (Rossi et al., page 305, equation 20)
+
+    We assume here that the computed fraction is not a cumulative fraction
+
+    Parameters:
+    - hour_since_last_rain (np.ndarray[np.int_]): A 1-dimensional NumPy array with the number of hours since last rain.
+
+    Returns:
+    - np.ndarray: A 1-dimensional NumPy array of the same shape as `hour_since_last_rain`, where each element
+      represents the fraction of ascospore that has died
     """
-    result = 0.263 * (1 - 0.97315 ** hour_since_last_rain)
+
+    result = 0.263 * (1.0 - 0.97315 ** hour_since_last_rain)
     return result
 
 
 def compute_ds2_mor(hour_since_last_rain: np.ndarray[1, np.int_], temperature: np.ndarray[1, np.float64],
                     humidity: np.ndarray[1, np.float64]):
     """
-    Computes mortality stage2 (Rossi et al., page 305, equation 21)
+    Computes mortality rate of ascospores in stage2 (Rossi et al., page 305, equation 21)
+
+    We assume here that the computed fraction is not a cumulative fraction
+
+    Parameters:
+    - hour_since_last_rain (np.ndarray[np.int_]): A 1-dimensional NumPy array with the number of hours since last rain.
+    - temperature (np.ndarray[np.float64]): A 1-dimensional NumPy array with the temperature in degrees Celcius.
+    - humidity (np.ndarray[np.float64]): A 1-dimensional NumPy array with the humidity as a percentage
+
+    Returns:
+    - np.ndarray: A 1-dimensional NumPy array of the same shape as `hour_since_last_rain`, where each element
+      represents the fraction of ascospore that has died
     """
+
     result = (-1.538 + 0.253 * temperature - 0.00694 * (temperature ** 2)) * \
              (1 - 0.977 ** hour_since_last_rain) * (0.0108 * humidity - 0.008)
     return result
@@ -169,17 +254,34 @@ def compute_ds2_mor(hour_since_last_rain: np.ndarray[1, np.int_], temperature: n
 
 def compute_ds3_mor(hour_since_last_rain, temperature):
     """
-    Computes mortality stage2 (Rossi et al., page 305, equation 22)
+    Computes mortality rate of ascospores in stage2 (Rossi et al., page 305, equation 22)
+
+    We assume here that the computed fraction is not a cumulative fraction
+
+    Parameters:
+    - hour_since_last_rain (np.ndarray[np.int_]): A 1-dimensional NumPy array with the number of hours since last rain.
+    - temperature (np.ndarray[np.float64]): A 1-dimensional NumPy array with the temperature in degrees Celcius.
+
+    Returns:
+    - np.ndarray: A 1-dimensional NumPy array of the same shape as `hour_since_last_rain`, where each element
+      represents the fraction of ascospore that has died
     """
+
     result = (0.0028 * hour_since_last_rain) * \
              (-1.27 + 0.326 * temperature - 0.0102 * (temperature ** 2))
     return result
 
 
-def compute_leaf_development(lai):
+def compute_leaf_development(lai: float) -> float:
     """
     Computes leaf development (Rossi et al., page 305, equation 23)
+
+    Parameters:
+    - lai (float): Leaf area index
+
+    Note that the computation looks rather suspicious, as the result becomes negative when lai exceeds 0.125
     """
+
     # TODO: looks suspicious
     result = 1 / (-5445.5 * (lai ** 2) + 661.55 * (lai))
     return result
@@ -188,13 +290,31 @@ def compute_leaf_development(lai):
 def compute_delta_incubation(temperature: float) -> float:
     """
     Computes daily progress of incubation (Rossi et al., page 305, equation 25)
+
+    Parameters:
+    - temperature (float): Temperature
     """
+
     result = 1.0 / (26.4 - 1.0268 * temperature)
     return result
 
 
-def get_discharge_date(df_weather_day: pd.DataFrame, pat_previous: float, pat_current: float, time_previous):
-    # Rossi et al. Fig. 2 p302
+def get_discharge_date(df_weather_day: pd.DataFrame, pat_previous: float, pat_current: float, time_previous: pd.Timestamp):
+    """
+    Computes the discharge date following Rossi et al. Fig. 2 p302
+
+    Parameters:
+    - df_weather_day (pd.DataFrame): Weather
+    - pat_previous (float): Value of "Proportion of ascospores that can become airborne" at the previous event
+    - pat_previous (float): Proportion of ascospores that can become airborne at the current event
+    - time_previous (pd.Timestamp): Start of the previous event
+
+    Returns:
+    - np.ndarray: A 1-dimensional NumPy array of the same shape as `hour_since_onset`, where each element
+      represents the computed ascospore dose for the corresponding hour since onset. Hours that are negative in the
+      input array will result in a dose of 0 in the output array.
+    """
+
     if pat_current > 0.99: return None
     # TODO: past 24 hours not taken into account
     rain_events = is_rain_event(df_weather_day)
@@ -231,7 +351,7 @@ def will_infect(df_weather_infection):
 
 
 class InfectionRate():
-    '''
+    """
     Implementation of Infection model from Rossi et al., figure 2
 
     The model describes the progression of spores deposited on an apple tree.
@@ -263,7 +383,7 @@ class InfectionRate():
       (3) Multiply (1) and (2) to obtain the amount that will be lost; subtract from population that has survived
 
     Incubation period is not implemented (yet) as that won't influence end result
-    '''
+    """
 
     def __init__(self, discharge_date: pd.Timestamp, ascospore_value, previous_ascospore_value, lai, duration: int, temperature):
         super(InfectionRate, self).__init__()

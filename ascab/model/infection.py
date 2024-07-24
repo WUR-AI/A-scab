@@ -299,7 +299,8 @@ def compute_delta_incubation(temperature: float) -> float:
     return result
 
 
-def get_discharge_date(df_weather_day: pd.DataFrame, pat_previous: float, pat_current: float, time_previous: pd.Timestamp):
+def get_discharge_date(df_weather_day: pd.DataFrame, pat_previous: float, pat_current: float,
+                       time_previous: pd.Timestamp) -> pd.Timestamp | None:
     """
     Computes the discharge date following Rossi et al. Fig. 2 p302
 
@@ -310,9 +311,7 @@ def get_discharge_date(df_weather_day: pd.DataFrame, pat_previous: float, pat_cu
     - time_previous (pd.Timestamp): Start of the previous event
 
     Returns:
-    - np.ndarray: A 1-dimensional NumPy array of the same shape as `hour_since_onset`, where each element
-      represents the computed ascospore dose for the corresponding hour since onset. Hours that are negative in the
-      input array will result in a dose of 0 in the output array.
+    - pd.Timestamp: Day of discharge
     """
 
     if pat_current > 0.99: return None
@@ -328,7 +327,17 @@ def get_discharge_date(df_weather_day: pd.DataFrame, pat_previous: float, pat_cu
 
 
 def meets_infection_requirement(temperature: float, wet_hours: int):
-    # Obtained from table 2 Stensvand et al (1997)
+    """
+    Determines whether requirements for an infection event are met, according to table 2 Stensvand et al. (1997)
+
+    Parameters:
+    - temperature (float): Average temperature in degrees Celsius during wet hours
+    - wet_hours (int): Number of wet hours
+
+    Returns:
+    - np.bool: whether requirements for an infection event are met
+    """
+
     infection_table = {
         'temperature': [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
                         11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0,
@@ -344,7 +353,19 @@ def meets_infection_requirement(temperature: float, wet_hours: int):
     return wet_hours >= required_wet_hours
 
 
-def will_infect(df_weather_infection):
+def will_infect(df_weather_infection: pd.DataFrame) -> (bool, int, float):
+    """
+    Determines whether requirements for an infection event are met, according to table 2 Stensvand et al. (1997)
+
+    Parameters:
+    - df_weather_infection (pd.DataFrame): Weather in next few days
+
+    Returns:
+    - bool: whether requirements for an infection event are met
+    - int: duration of infection period
+    - float: average temperature during infection
+    """
+
     infection_duration, infection_temperature = compute_duration_and_temperature_wet_period(df_weather_infection)
     result = meets_infection_requirement(infection_temperature, infection_duration)
     return result, infection_duration, infection_temperature
@@ -385,7 +406,8 @@ class InfectionRate():
     Incubation period is not implemented (yet) as that won't influence end result
     """
 
-    def __init__(self, discharge_date: pd.Timestamp, ascospore_value, previous_ascospore_value, lai, duration: int, temperature):
+    def __init__(self, discharge_date: pd.Timestamp, ascospore_value: float, previous_ascospore_value: float,
+                 lai: float, duration: int, temperature: float):
         super(InfectionRate, self).__init__()
         self.discharge_date = discharge_date
         self.pat_start = ascospore_value
@@ -476,6 +498,9 @@ class InfectionRate():
             self.risk.append((day, cumulative_risk))
 
     def get_infection_efficiency(self):
+        # Rossi p305: The value of S3 at the end of the infection period is IEinf
+        # (!) Here we take S3 at the end of each day to address ambiguity regarding the duration of the infection period
+
         result = self.total_population[-1] * self.s3[-1]
         return result
 

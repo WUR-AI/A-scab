@@ -46,6 +46,7 @@ def get_meteo(params, verbose: bool = False):
 
 
 def is_wet(precipitation, vapour_pressure_deficit):
+    # Zandelin, P. (2021). Virtual weather data for apple scab monitoring and management.
     precipitation_threshold = 0.0
     vapour_pressure_deficit_threshold = 0.25  # 2.5 hPa = 0.25kPa
     result = np.logical_or(precipitation > precipitation_threshold,
@@ -88,7 +89,9 @@ def summarize_weather(dates, df_weather: pd.DataFrame):
     return result
 
 
-def is_rain_event(df_weather_day: pd.DataFrame, threshold: float = 0.2, max_gap: int =2):
+def is_rain_event(df_weather_day: pd.DataFrame, threshold: float = 0.2, max_gap: int = 2):
+    # A period with measurable rainfall (R ≥ 0.2 mm/h) lasting one to several hours interrupted by maximum of two hours
+    # p. 303 Rossi et al. A
     precipitation = df_weather_day['precipitation'].to_numpy()
     rain = precipitation >= threshold
     result = fill_gaps(rain, max_gap=max_gap)
@@ -96,6 +99,13 @@ def is_rain_event(df_weather_day: pd.DataFrame, threshold: float = 0.2, max_gap:
 
 
 def compute_duration_and_temperature_wet_period(df_weather_infection: pd.DataFrame):
+    # An infection event is composed by two wet periods interrupted by a dry period of at least 4 h;
+    # shorter interruptions of the wet period are not considered as interruptions.
+    # For instance, the following situation: 8 h wet +2 h dry +6 h wet +8 h dry +12 h wet,
+    # represents a potential infection period with tinf = 26 h
+    # and a Tinf calculated by averaging T during wetness, disregarding interruptions.
+    # p. 304 Rossi et al.
+
     wet = df_weather_infection.apply(lambda row: is_wet(row['precipitation'], row['vapour_pressure_deficit']), axis=1).values
     temperature = df_weather_infection['temperature_2m'].to_numpy()
     wet_filled = fill_gaps(wet, max_gap=4)
@@ -109,7 +119,7 @@ def compute_duration_and_temperature_wet_period(df_weather_infection: pd.DataFra
     return None, None, None
 
 
-def summarize_rain(dates, df_weather):
+def summarize_rain(dates, df_weather: pd.DataFrame):
     hourly_data = []
     for day in dates:
         df_weather_day = df_weather.loc[day.strftime('%Y-%m-%d')]

@@ -371,7 +371,7 @@ def will_infect(df_weather_infection: pd.DataFrame) -> (bool, int, float):
     return result, infection_duration, infection_temperature
 
 
-class InfectionRate():
+class InfectionRate:
     """
     Implementation of Infection model from Rossi et al., figure 2
 
@@ -413,6 +413,7 @@ class InfectionRate():
         self.pat_start = ascospore_value
         self.pat_previous = previous_ascospore_value
         self.lai = lai
+
         self.infection_duration = duration
         self.infection_temperature = temperature
 
@@ -512,7 +513,18 @@ class InfectionRate():
         return bool(self.hours) and self.hours[-1] > (self.infection_duration)
 
 
-def get_values_last_infections(infections: list[InfectionRate]):
+def get_values_last_infections(infections: list[InfectionRate]) -> (pd.Timestamp, float):
+    """
+    Retrieves the discharge date and pat value from the last infection event.
+
+    Parameters:
+    - infections (list[InfectionRate]): A list of InfectionRate objects.
+
+    Returns:
+    - pd.Timestamp: The discharge date of the last infection, or January 1, 1900, if the list is empty.
+    - float: Pat value (proportion of ascospores that can become airborne) from last infection, or 0 if the list is empty.
+    """
+
     if infections:
         time_previous = infections[-1].discharge_date
         pat_previous = infections[-1].pat_start
@@ -522,12 +534,23 @@ def get_values_last_infections(infections: list[InfectionRate]):
     return time_previous, pat_previous
 
 
-def get_risk(infections: list[InfectionRate], date):
+def get_risk(infections: list[InfectionRate], date: datetime.date) -> np.float64:
+    """
+    Computes the risk score for a specific date, based on all infections active on that day.
+
+    Parameters:
+    - infections (list[InfectionRate]): A list of InfectionRate objects containing risk data.
+    - date (datetime.date): The specific date for which to compute the risk.
+
+    Returns:
+    - np.float64: The total risk score for the specified date. Returns 0.0 if no infection is active on that day.
+    """
+
     risks = []
     for infection in infections:
         for (risk_day, risk_score) in infection.risk:
             if risk_day == date:
                 risks.append(risk_score.item())
 
-    result = np.sum(risks) if len(risks) != 0 else 0
+    result = np.sum(risks) if len(risks) != 0 else 0.0
     return result

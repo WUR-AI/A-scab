@@ -145,7 +145,8 @@ class AScabEnv(gym.Env):
             df_weather_infection = self.weather.loc[self.date.strftime("%Y-%m-%d"):end_day.strftime("%Y-%m-%d")]
             infect, infection_duration, infection_temperature = will_infect(df_weather_infection)
             if infect:
-                self.infections.append(InfectionRate(discharge_date, ascospore_value, pat_previous, lai_value, infection_duration, infection_temperature))
+                self.infections.append(InfectionRate(discharge_date, ascospore_value, pat_previous, lai_value,
+                                                     infection_duration, infection_temperature))
             else:
                 if self.verbose: print(f'No infection {infection_duration} {infection_temperature}')
         for infection in self.infections:
@@ -190,7 +191,7 @@ class AScabEnv(gym.Env):
         risk = self.info["Risk"][-1]
         action = self.info["Action"][-1]
         result = -risk -(action * 0.025)
-        return result
+        return float(result)
 
     def render(self):
         df_info = self.get_info(to_dataframe=True)

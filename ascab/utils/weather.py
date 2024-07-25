@@ -116,7 +116,7 @@ def compute_duration_and_temperature_wet_period(df_weather_infection: pd.DataFra
         wet_hours = np.sum(wet[: last_index + 1])
         average_temperature = np.mean(temperature[:last_index + 1])
         return wet_hours, average_temperature
-    return None, None, None
+    return 0, None
 
 
 def summarize_rain(dates, df_weather: pd.DataFrame):

@@ -18,7 +18,7 @@ def get_default_dates():
     return "2011-02-01", "2011-08-01"
 
 
-def get_weather_params(location: tuple = None, dates: list[str] = None):
+def get_weather_params(location: tuple[float, float] = None, dates: tuple[str, str] = None):
     if location is None:
         location = get_default_location()
     if dates is None:
@@ -63,7 +63,7 @@ class AScabEnv(gym.Env):
     risk of Venturia inaequalis primary infections. EPPO Bulletin, 37(2), 300-308.
     """
 
-    def __init__(self, location: tuple = None, dates: list[str] = None, seed: int = 42, verbose: bool = False):
+    def __init__(self, location: tuple[float, float] = None, dates: tuple[str, str] = None, seed: int = 42, verbose: bool = False):
         if location is None:
             location = get_default_location()
         if dates is None:

@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pytz
 import datetime
+from typing import Optional
 
 from ascab.utils.weather import is_rain_event, compute_duration_and_temperature_wet_period
 from ascab.utils.generic import items_since_last_true
@@ -9,7 +10,7 @@ from ascab.utils.generic import items_since_last_true
 
 def determine_discharge_hour_index(pat: float, rain_events: np.ndarray[1, np.bool_], is_daytime: np.ndarray[1, np.bool_],
                                    pat_previous: float, hours_since_previous: np.ndarray[1, np.int_])\
-                                    -> np.ndarray[1, np.int_] | None:
+                                    -> Optional[np.ndarray[1, np.int_]]:
     """
     Determines the index of the hour at which ascospores are discharged based on various conditions.
 
@@ -300,7 +301,7 @@ def compute_delta_incubation(temperature: float) -> float:
 
 
 def get_discharge_date(df_weather_day: pd.DataFrame, pat_previous: float, pat_current: float,
-                       time_previous: pd.Timestamp) -> pd.Timestamp | None:
+                       time_previous: pd.Timestamp) -> Optional[pd.Timestamp]:
     """
     Computes the discharge date following Rossi et al. Fig. 2 p302
 

@@ -2,10 +2,11 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pandas as pd
 import numpy as np
+from typing import Union
 from ascab.model.infection import InfectionRate
 
 
-def plot_results(results: [dict[str, pd.DataFrame] | pd.DataFrame], variables: list[str] = None):
+def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variables: list[str] = None):
     if not isinstance(results, dict):
         results = {"": results}
 

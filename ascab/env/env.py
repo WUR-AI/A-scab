@@ -63,12 +63,8 @@ class AScabEnv(gym.Env):
     risk of Venturia inaequalis primary infections. EPPO Bulletin, 37(2), 300-308.
     """
 
-    def __init__(self, location: tuple[float, float] = None, dates: tuple[str, str] = None, seed: int = 42, verbose: bool = False):
-        if location is None:
-            location = get_default_location()
-        if dates is None:
-            dates = get_default_dates()
-
+    def __init__(self, location: tuple[float, float] = get_default_location(), dates: tuple[str, str] = get_default_dates(),
+                 weather: pd.DataFrame = None, seed: int = 42, verbose: bool = False):
         super().reset(seed=seed)
 
         pseudothecia = PseudothecialDevelopment()
@@ -78,7 +74,7 @@ class AScabEnv(gym.Env):
         self.dates = tuple(datetime.strptime(date, "%Y-%m-%d").date() for date in dates)
         self.models = {type(model).__name__: model for model in [pseudothecia, ascospore, lai]}
         self.infections = []
-        self.weather = get_meteo(get_weather_params(location, dates), False)
+        self.weather = weather if weather is not None else get_meteo(get_weather_params(location, dates), verbose)
         self.date = datetime.strptime(dates[0], '%Y-%m-%d').date()
         self.info = {"Date": [],
                      **{name: [] for name, _ in self.models.items()},

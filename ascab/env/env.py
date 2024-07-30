@@ -70,11 +70,13 @@ class AScabEnv(gym.Env):
         pseudothecia = PseudothecialDevelopment()
         ascospore = AscosporeMaturation(pseudothecia)
         lai = LAI()
+        self.seed = seed
         self.verbose = verbose
         self.dates = tuple(datetime.strptime(date, "%Y-%m-%d").date() for date in dates)
         self.models = {type(model).__name__: model for model in [pseudothecia, ascospore, lai]}
         self.infections = []
-        self.weather = weather if weather is not None else get_meteo(get_weather_params(location, dates), verbose)
+        self.location = location
+        self.weather = weather if weather is not None else get_meteo(get_weather_params(location, dates), True)
         self.date = datetime.strptime(dates[0], '%Y-%m-%d').date()
         self.info = {"Date": [],
                      **{name: [] for name, _ in self.models.items()},
@@ -199,5 +201,6 @@ class AScabEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.__init__()
+        self.__init__(location=self.location, dates=(self.dates[0].strftime("%Y-%m-%d"), self.dates[1].strftime("%Y-%m-%d")),
+                      weather=self.weather, seed=self.seed, verbose=self.verbose)
         return self._get_observation(), self.get_info()

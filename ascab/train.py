@@ -8,7 +8,9 @@ def get_default_observation_filter():
     return ["weather", "tree"]
 
 
-def rl_agent(ascab: AScabEnv = AScabEnv(), n_steps=5000, observation_filter=get_default_observation_filter()):
+def rl_agent(ascab: AScabEnv = None, n_steps=5000, observation_filter=get_default_observation_filter()):
+    if ascab is None:
+        ascab = AScabEnv()
     if observation_filter:
         print(f'filter observations: {observation_filter}')
         ascab = FilterObservation(ascab, filter_keys=observation_filter)
@@ -27,7 +29,9 @@ def rl_agent(ascab: AScabEnv = AScabEnv(), n_steps=5000, observation_filter=get_
     return ascab.get_info(to_dataframe=True)
 
 
-def cheating_agent(ascab: AScabEnv = AScabEnv()):
+def cheating_agent(ascab: AScabEnv = None):
+    if ascab is None:
+        ascab = AScabEnv()
     terminated = False
     total_reward = 0.0
     ascab.reset()
@@ -41,7 +45,9 @@ def cheating_agent(ascab: AScabEnv = AScabEnv()):
     return ascab.get_info(to_dataframe=True)
 
 
-def zero_agent(ascab: AScabEnv = AScabEnv()):
+def zero_agent(ascab: AScabEnv = None):
+    if ascab is None:
+        ascab = AScabEnv()
     terminated = False
     total_reward = 0.0
     ascab.reset()

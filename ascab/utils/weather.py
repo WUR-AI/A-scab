@@ -8,7 +8,7 @@ from scipy.ndimage import label
 from ascab.utils.generic import fill_gaps
 
 
-def get_meteo(params, verbose: bool = False):
+def get_meteo(params, verbose: bool = False) -> pd.DataFrame:
     url = "https://archive-api.open-meteo.com/v1/archive"
 
     # Setup the Open-Meteo API client with cache and retry on error

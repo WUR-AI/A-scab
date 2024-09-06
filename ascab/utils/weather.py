@@ -75,12 +75,18 @@ class WeatherSummary:
             result_data['LeafWetness'].append(leaf_wetness)
             result_data['HasRain'].append(has_rain_event)
             result_data['Precipitation'].append(total_precipitation)
+
+            avg_temperature = df_weather_day['temperature_2m'].mean()
+            hours_humid = len(df_weather_day[df_weather_day['relative_humidity_2m'] > 85.0])
+            result_data["Temperature"].append(avg_temperature)
+            result_data["HumidDuration"].append(hours_humid)
+
         self.result = pd.DataFrame(result_data)
         self.result['Date'] = pd.to_datetime(self.result["Date"])
 
     @staticmethod
     def get_variable_names():
-        return ['LeafWetness', 'HasRain', 'Precipitation']
+        return ['LeafWetness', 'HasRain', 'Precipitation', 'Temperature', 'HumidDuration']
 
 
 def summarize_weather(dates, df_weather: pd.DataFrame):

@@ -146,7 +146,7 @@ class AscosporeMaturation:
         if not pseudothecial_development_has_ended(pseudothecia):
             return 0, 0
         wet_hourly = is_wet(precipitation, vapour_pressure_deficit)
-        hw = wet_hourly * temperature_2m / 24.0
+        hw = wet_hourly * temperature_2m / float(len(wet_hourly))
         dhw = np.sum(hw)
         current_value = pat(current_dhw)
         new_value = pat(current_dhw + dhw)

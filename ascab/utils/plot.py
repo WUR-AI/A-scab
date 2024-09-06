@@ -51,10 +51,14 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variab
             if i == 0: ax.legend()
 
             if variable == 'LeafWetness':
-                ax.fill_between(df['Date'], df[variable], where=(df[variable] >= 0), color='blue', alpha=0.3, step="post")
+                ax.axhline(y=8.0, color="red", linestyle="--")
 
             if variable == 'Precipitation':
                 ax.axhline(y=0.2, color='red', linestyle='--')
+            if variable == 'TotalRain':
+                ax.axhline(y=0.25, color='red', linestyle='--')
+            if variable == 'HumidDuration':
+                ax.axhline(y=8.0, color="red", linestyle="--")
 
             # Add vertical line when the variable first passes the threshold
             thresholds = [0.016, 0.99]
@@ -105,21 +109,28 @@ def plot_infection(infection: InfectionRate):
     total = np.sum([infection.s1, infection.s2, infection.s3], axis=0)
     ax1.plot(infection.hours, total, label='sum_s1_s2_s3', linestyle='solid', color='black')
     ax1.axvline(x=0, color="red", linestyle="--")
-    ax1.axvline(x=infection.infection_duration, color="red", linestyle="--", label="duration")
-    ax1.step([item for sublist in [infection.hours[index*24: (index+1)*24] for index, _ in enumerate(infection.risk)] for item in sublist],
+    ax1.axvline(x=infection.infection_duration, color="red", linestyle="--", label="infection duration")
+
+    discharge_duration = 90.96 * infection.infection_temperature **(-0.96)
+    ax1.axvline(x=discharge_duration, color="orange", linestyle="--", label="discharge duration")
+
+    if len(infection.hours) % 24 == 0:
+        ax1.step([item for sublist in [infection.hours[index*24: min(len(infection.hours), (index+1)*24)] for index, _ in enumerate(infection.risk)] for item in sublist],
              [item for sublist in [[entry[1]] * 24 for entry in infection.risk] for item in sublist],
              color="orange", linestyle='solid', label="cumulative risk", where='post')
 
     dates = infection.discharge_date + pd.to_timedelta(infection.hours, unit="h")
     unique_dates = pd.date_range(start=dates[0], end=dates[-1], freq="D")
-    for i, unique_date in enumerate(unique_dates):
-        ax1.axvline(x=infection.hours[i*24], color="grey", linestyle="--", linewidth=0.8)
-        ax1.text(infection.hours[i*24]+0.1, ax1.get_ylim()[1], unique_date.strftime("%Y-%m-%d"),
+
+    if len(infection.hours) % 24 == 0:
+        for i, unique_date in enumerate(unique_dates):
+            ax1.axvline(x=infection.hours[i*24], color="grey", linestyle="--", linewidth=0.8)
+            ax1.text(infection.hours[i*24]+0.1, ax1.get_ylim()[1], unique_date.strftime("%Y-%m-%d"),
                  color="grey", ha="left", va="top", rotation=90, fontsize=9)
 
     plt.xlabel('Time')
     plt.ylabel('Value')
-    plt.title(f'Infection Data {infection.risk[-1][1]:.2f}')
+    plt.title(f'Infection Data {infection.risk[-1][1]:.2f} {infection.infection_temperature:.1f} {infection.infection_duration}')
     plt.legend()
     plt.show()
 

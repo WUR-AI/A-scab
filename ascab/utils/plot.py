@@ -12,6 +12,7 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variab
 
     if variables is None:
         variables = list(results.values())[0].columns.tolist()
+        variables.reverse()  # Reverse the order of the variables
     else:
         # Check if the provided variables exist in the DataFrames
         for df in results.values():
@@ -23,7 +24,7 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variab
 
     # Exclude 'Date' column from variables to be plotted
     variables = [var for var in variables if var != 'Date']
-    variables.reverse()  # Reverse the order of the variables
+
     num_variables = len(variables)
     fig, axes = plt.subplots(num_variables, 1, figsize=(7, 3 * num_variables), sharex=True)
 
@@ -88,9 +89,15 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variab
                 # Adjust tick label rotation and alignment
                 secax.tick_params(axis='x', labelrotation=0, direction='in')
 
-    plt.xlabel('Date')
-    plt.xticks(rotation=45)
-    plt.tight_layout()
+    plt.xticks(rotation=0)
+    ax = axes[-1] if num_variables > 1 else axes
+    # Set the x-axis major formatter to display abbreviated month names
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
+    ax.tick_params(axis="x", pad=10)
+    all_years = pd.to_datetime(
+        pd.concat([df["Date"] for df in results.values()])
+    ).dt.year.unique()
+    plt.xlabel(f'{all_years}')
     plt.show()
 
 

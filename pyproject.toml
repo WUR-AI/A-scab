@@ -18,6 +18,7 @@ matplotlib = "^3.9.0"
 gymnasium = "^0.29.1"
 stable-baselines3 = "^2.3.2"
 scipy = "^1.13.0"
+xlrd = "^2.0.1"
 
 
 [build-system]

@@ -16,10 +16,13 @@ pandas = "^2.2.2"
 datetime = "^5.5"
 matplotlib = "^3.9.0"
 gymnasium = "^0.29.1"
-stable-baselines3 = "^2.3.2"
+numpy = "^1.26.4"
 scipy = "^1.13.0"
 xlrd = "^2.0.1"
+stable-baselines3 = {version = "^2.3.2", optional = true}
 
+[tool.poetry.extras]
+sb-integration = ["stable-baselines3"]
 
 [build-system]
 requires = ["poetry-core"]

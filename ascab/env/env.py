@@ -11,11 +11,11 @@ from ascab.model.infection import InfectionRate, get_values_last_infections, get
 
 
 def get_default_location():
-    return 50.8, 5.2
+    return 51.98680, 5.66359
 
 
 def get_default_dates():
-    return "2011-02-01", "2011-08-01"
+    return "2024-01-01", "2024-10-01"
 
 
 def get_weather_params(location: tuple[float, float] = None, dates: tuple[str, str] = None):

@@ -35,9 +35,9 @@ def test_weather():
     # day_to_plot = random.choice(dates)
     df_weather = get_meteo(params, True)
     df_rain = summarize_rain(start_end, df_weather)
-    day_to_plot = pd.Timestamp('2011-06-20')
+    day_to_plot = pd.Timestamp('2022-08-15')
     plot_precipitation_with_rain_event(df_rain, day_to_plot)
-    day_to_plot = pd.Timestamp('2011-06-21')
+    day_to_plot = pd.Timestamp('2022-08-18')
     plot_precipitation_with_rain_event(df_rain, day_to_plot)
 
 

@@ -75,13 +75,15 @@ class AScabEnv(gym.Env):
         self.dates = tuple(datetime.strptime(date, "%Y-%m-%d").date() for date in dates)
         self.models = {type(model).__name__: model for model in [pseudothecia, ascospore, lai]}
         self.infections = []
-        self.location = location
+        self.location = location  # latitude, longitude
         self.weather = weather if weather is not None else get_meteo(get_weather_params(location, dates), True)
+        self.weather_forecast = get_meteo(params=get_weather_params(location, dates), forecast=True)
         self.date = datetime.strptime(dates[0], '%Y-%m-%d').date()
         self.info = {"Date": [],
                      **{name: [] for name, _ in self.models.items()},
                      "Ascospores": [], "Discharge": [], "Infections": [], "Risk": [],
                      **{name: [] for name in WeatherSummary.get_variable_names()},
+                     **{f'Forecast_{name}': [] for name in WeatherSummary.get_variable_names()},
                      "Action": [], "Reward": []}
 
         self.observation_space_disease = gym.spaces.Dict({
@@ -95,10 +97,15 @@ class AScabEnv(gym.Env):
             for name, _ in self.info.items() if name in {"LAI"}
         })
 
-        self.observation_space_weather_summary = gym.spaces.Dict({
-            name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
-            for name, _ in self.info.items() if name in WeatherSummary.get_variable_names()
-        })
+        self.observation_space_weather_summary = gym.spaces.Dict(
+            {
+                name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
+                for name, _ in self.info.items()
+                if name in WeatherSummary.get_variable_names()
+                or name.startswith("Forecast_")
+                and name[9:] in WeatherSummary.get_variable_names()
+            }
+        )
 
         self.observation_space = gym.spaces.Dict(
             {
@@ -120,6 +127,11 @@ class AScabEnv(gym.Env):
         varnames = [col for col in self.info.keys() if col in df_summary_weather.columns]
         weather_observation = df_summary_weather[varnames].to_dict(orient="list")
         [self.info[key].extend(value) for key, value in weather_observation.items() if key != "Date"]
+
+        df_summary_weather_forecast = summarize_weather([self.date + timedelta(days=1)], self.weather_forecast)
+        varnames = [col for col in self.info.keys() if col in df_summary_weather_forecast.columns]
+        weather_forecast = df_summary_weather_forecast[varnames].to_dict(orient="list")
+        [self.info[f'Forecast_{key}'].extend(value) for key, value in weather_forecast.items() if key != "Date"]
 
         df_weather_day = self.weather.loc[self.date.strftime("%Y-%m-%d")]
         for model in self.models.values():

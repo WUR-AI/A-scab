@@ -172,7 +172,7 @@ class LAI:
     def update_rate(self, df_weather_day: pd.DataFrame):
         day = df_weather_day.index.date[0].timetuple().tm_yday
         avg_temperature = df_weather_day['temperature_2m'].mean()
-        self.rate = self.compute_rate( np.float32(self.value), day, avg_temperature)
+        self.rate = self.compute_rate(np.float32(self.value), day, avg_temperature)
         return self.rate
 
     @staticmethod

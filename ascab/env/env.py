@@ -76,8 +76,8 @@ class AScabEnv(gym.Env):
         self.models = {type(model).__name__: model for model in [pseudothecia, ascospore, lai]}
         self.infections = []
         self.location = location  # latitude, longitude
-        self.weather = weather if weather is not None else get_meteo(get_weather_params(location, dates), True)
-        self.weather_forecast = get_meteo(params=get_weather_params(location, dates), forecast=True)
+        self.weather = weather if weather is not None else get_meteo(get_weather_params(location, dates), forecast=False, verbose=False)
+        self.weather_forecast = get_meteo(params=get_weather_params(location, dates), forecast=True, verbose=False)
         self.date = datetime.strptime(dates[0], '%Y-%m-%d').date()
         self.info = {"Date": [],
                      **{name: [] for name, _ in self.models.items()},

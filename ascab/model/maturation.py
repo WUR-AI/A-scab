@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 
 from ascab.utils.weather import compute_leaf_wetness_duration, is_wet
+from ascab.utils.generic import parse_date
 
 
 def get_default_budbreak_date():
@@ -136,7 +137,7 @@ class AscosporeMaturation:
         self._dhw = 0
         self._delta_dhw = 0
         self._dependencies = dependency
-        self._biofix_date = (None if biofix_date is None else datetime.datetime.strptime(biofix_date, "%B %d").timetuple().tm_yday)
+        self.biofix_date = parse_date(biofix_date)
 
     def update_rate(self, df_weather_day: pd.DataFrame) -> np.float32:
         precipitation = df_weather_day['precipitation'].values
@@ -144,7 +145,7 @@ class AscosporeMaturation:
         temperature_2m = df_weather_day['temperature_2m'].values
         day = df_weather_day.index.date[0].timetuple().tm_yday
 
-        if (self._biofix_date is not None and day >= self._biofix_date) or pseudothecial_development_has_ended(self._dependencies.value):
+        if (self.biofix_date is not None and day >= self.biofix_date) or pseudothecial_development_has_ended(self._dependencies.value):
             self.rate, self._delta_dhw = self.compute_rate(np.float32(self._dhw), precipitation, vapour_pressure_deficit, temperature_2m)
         else:
             self.rate, self._delta_dhw = 0, 0
@@ -176,12 +177,12 @@ class LAI:
         super(LAI, self).__init__()
         self.value = 0
         self.rate = 0
-        self.start_day = datetime.datetime.strptime(start_date, '%B %d').timetuple().tm_yday
+        self.start_date = parse_date(start_date)
 
     def update_rate(self, df_weather_day: pd.DataFrame):
         day = df_weather_day.index.date[0].timetuple().tm_yday
         avg_temperature = df_weather_day['temperature_2m'].mean()
-        self.rate = self.compute_rate(self.start_day, np.float32(self.value), day, avg_temperature)
+        self.rate = self.compute_rate(self.start_date, np.float32(self.value), day, avg_temperature)
         return self.rate
 
     @staticmethod

@@ -70,8 +70,6 @@ class AScabEnv(gym.Env):
         pseudothecia = PseudothecialDevelopment()
         ascospore = AscosporeMaturation(pseudothecia, biofix_date=biofix_date)
         lai = LAI(start_date=budbreak_date)
-        self.biofix_date = biofix_date
-        self.budbreak_date = budbreak_date
         self.seed = seed
         self.verbose = verbose
         self.dates = tuple(datetime.strptime(date, "%Y-%m-%d").date() for date in dates)
@@ -216,6 +214,8 @@ class AScabEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.__init__(location=self.location, dates=(self.dates[0].strftime("%Y-%m-%d"), self.dates[1].strftime("%Y-%m-%d")),
-                      weather=self.weather, biofix_date=self.biofix_date, budbreak_date=self.budbreak_date,
+                      weather=self.weather,
+                      biofix_date=self.models['AscosporeMaturation'].biofix_date,
+                      budbreak_date=self.models['LAI'].start_date,
                       seed=self.seed, verbose=self.verbose)
         return self._get_observation(), self.get_info()

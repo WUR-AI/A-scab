@@ -5,6 +5,10 @@ import pandas as pd
 from ascab.utils.weather import compute_leaf_wetness_duration, is_wet
 
 
+def get_default_budbreak_date():
+    return 'April 1'
+
+
 def pseudothecial_development_has_ended(stage: np.float64) -> bool:
     """
     Determines whether pseudothecial development has ended, based on the presence of first mature ascospores.
@@ -56,7 +60,7 @@ class PseudothecialDevelopment:
       Integrates the rate of change into the current value to update the development stage.
     """
 
-    def __init__(self, initial_value: np.float32 = 5.0):
+    def __init__(self, start_day: str = "February 1", initial_value: np.float32 = 5.0):
         """
         Initializes the PseudothecialDevelopment class with an initial value.
 
@@ -66,6 +70,7 @@ class PseudothecialDevelopment:
         super(PseudothecialDevelopment, self).__init__()
         self.value = initial_value
         self.rate = 0
+        self.start_day = datetime.datetime.strptime(start_day, "%B %d").timetuple().tm_yday
 
     def update_rate(self, df_weather_day: pd.DataFrame):
         """
@@ -82,11 +87,11 @@ class PseudothecialDevelopment:
         total_rain = df_weather_day['precipitation'].sum()
         hours_humid = len(df_weather_day[df_weather_day['relative_humidity_2m'] > 85.0])
         wetness_duration = compute_leaf_wetness_duration(df_weather_day)
-        self.rate = self.compute_rate(self.value, day, avg_temperature, total_rain, hours_humid, wetness_duration)
+        self.rate = self.compute_rate(self.start_day, self.value, day, avg_temperature, total_rain, hours_humid, wetness_duration)
         return self.rate
 
     @staticmethod
-    def compute_rate(current_value: np.float32, day: int, avg_temperature: np.float32, total_rain: np.float32,
+    def compute_rate(start_day: int, current_value: np.float32, day: int, avg_temperature: np.float32, total_rain: np.float32,
                      humid_hours: int, wetness_duration: np.int64):
         """
         Computes the rate of change in pseudothecial development.
@@ -95,6 +100,7 @@ class PseudothecialDevelopment:
         It also checks certain conditions that might inhibit development, setting the rate to zero if any are met.
 
         Parameters:
+        - start_day (int): Start of ontogenesis of pseudothecia
         - current_value (np.float32): The current value representing the stage of pseudothecial development.
         - day (int): The current day of the year.
         - avg_temperature (np.float32): The average temperature for the day in degrees Celcius.
@@ -108,7 +114,6 @@ class PseudothecialDevelopment:
         # Calculate the daily change in pseudothecial development (equation 1 Rossi et al. page 301)
         dy_dt = 0.0031 + 0.0546 * avg_temperature - 0.00175 * (avg_temperature ** 2)
         # Check conditions and modify dy_dt accordingly (equations 2 and 3 Rossi et al. page 301)
-        start_day = datetime.datetime.strptime('February 1', '%B %d').timetuple().tm_yday
         condition = (day < start_day) or pseudothecial_development_has_ended(current_value) or (
                 avg_temperature <= 0) or (total_rain <= 0.25) or (humid_hours <= 8) or (wetness_duration <= 8.0)
         dy_dt = np.where(condition, 0.0, dy_dt)
@@ -124,27 +129,30 @@ class AscosporeMaturation:
     This class implements the equations (5-8) as described on page 302 of Rossi et al.
     """
 
-    def __init__(self, dependency: PseudothecialDevelopment):
+    def __init__(self, dependency: PseudothecialDevelopment, biofix_date=None):
         super(AscosporeMaturation, self).__init__()
         self.value = 0
         self.rate = 0
         self._dhw = 0
         self._delta_dhw = 0
         self._dependencies = dependency
+        self._biofix_date = (None if biofix_date is None else datetime.datetime.strptime(biofix_date, "%B %d").timetuple().tm_yday)
 
     def update_rate(self, df_weather_day: pd.DataFrame) -> np.float32:
         precipitation = df_weather_day['precipitation'].values
         vapour_pressure_deficit = df_weather_day['vapour_pressure_deficit'].values
         temperature_2m = df_weather_day['temperature_2m'].values
-        self.rate, self._delta_dhw = self.compute_rate(self._dependencies.value, np.float32(self._dhw), precipitation,
-                                                       vapour_pressure_deficit, temperature_2m)
+        day = df_weather_day.index.date[0].timetuple().tm_yday
+
+        if (self._biofix_date is not None and day >= self._biofix_date) or pseudothecial_development_has_ended(self._dependencies.value):
+            self.rate, self._delta_dhw = self.compute_rate(np.float32(self._dhw), precipitation, vapour_pressure_deficit, temperature_2m)
+        else:
+            self.rate, self._delta_dhw = 0, 0
         return self.rate
 
     @staticmethod
-    def compute_rate(pseudothecia: np.float32, current_dhw: np.float32, precipitation: np.ndarray[1, np.float32],
+    def compute_rate(current_dhw: np.float32, precipitation: np.ndarray[1, np.float32],
                      vapour_pressure_deficit: np.ndarray[1, np.float32], temperature_2m: np.ndarray[1, np.float32]) -> (np.float32, np.float32):
-        if not pseudothecial_development_has_ended(pseudothecia):
-            return 0, 0
         wet_hourly = is_wet(precipitation, vapour_pressure_deficit)
         hw = wet_hourly * temperature_2m / float(len(wet_hourly))
         dhw = np.sum(hw)
@@ -164,25 +172,25 @@ class LAI:
     A class to model and update the Leaf Area Index of an apple tree.
     This class implements the description given on p305 of Rossi et al. with some modifications
     """
-    def __init__(self):
+    def __init__(self, start_date: str = get_default_budbreak_date()):
         super(LAI, self).__init__()
         self.value = 0
         self.rate = 0
+        self.start_day = datetime.datetime.strptime(start_date, '%B %d').timetuple().tm_yday
 
     def update_rate(self, df_weather_day: pd.DataFrame):
         day = df_weather_day.index.date[0].timetuple().tm_yday
         avg_temperature = df_weather_day['temperature_2m'].mean()
-        self.rate = self.compute_rate(np.float32(self.value), day, avg_temperature)
+        self.rate = self.compute_rate(self.start_day, np.float32(self.value), day, avg_temperature)
         return self.rate
 
     @staticmethod
-    def compute_rate(current_value: np.float32, day: int, avg_temperature: np.float32):
+    def compute_rate(start_day: int, current_value: np.float32, day: int, avg_temperature: np.float32):
         # Calculate the daily change
         # TODO: Definition in Rossi not trivial. We may need to incorporate number of shoots
         number_of_shoots_per_m2 = 85
         dy_dt = 0.00008 * max(0.0, (avg_temperature - 4.0)) * number_of_shoots_per_m2
         # Check conditions and modify dy_dt accordingly
-        start_day = datetime.datetime.strptime('April 1', '%B %d').timetuple().tm_yday
         condition = (day < start_day) or (current_value > 5.0)
         dy_dt = np.where(condition, 0.0, dy_dt)
         return dy_dt

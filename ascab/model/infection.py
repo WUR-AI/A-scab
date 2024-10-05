@@ -8,6 +8,10 @@ from ascab.utils.weather import is_rain_event, compute_duration_and_temperature_
 from ascab.utils.generic import items_since_last_true
 
 
+def get_pat_threshold() -> float:
+    return 0.016
+
+
 def determine_discharge_hour_index(pat: float, rain_events: np.ndarray[1, np.bool_], is_daytime: np.ndarray[1, np.bool_],
                                    pat_previous: float, hours_since_previous: np.ndarray[1, np.int_])\
                                     -> Optional[np.ndarray[1, np.int_]]:
@@ -32,9 +36,9 @@ def determine_discharge_hour_index(pat: float, rain_events: np.ndarray[1, np.boo
       the provided conditions.
     """
 
-    # After PAT ′has reached 0.016, daytime rain events cause the instantaneous discharge of mature ascospores
+    # After PAT ′has reached pat_threshold, daytime rain events cause the instantaneous discharge of mature ascospores
     # so that they begin to be airborne immediately
-    if np.logical_or(pat <= 0.016, 1 not in rain_events):
+    if np.logical_or(pat <= get_pat_threshold(), 1 not in rain_events):
         return None
 
     first_rain_hour = np.where(rain_events == 1)[0][0]

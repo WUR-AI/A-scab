@@ -6,7 +6,7 @@ import random
 
 from ascab.utils.weather import get_meteo, summarize_weather, WeatherSummary
 from ascab.utils.plot import plot_results, plot_infection
-from ascab.model.maturation import PseudothecialDevelopment, AscosporeMaturation, LAI
+from ascab.model.maturation import PseudothecialDevelopment, AscosporeMaturation, LAI, get_default_budbreak_date
 from ascab.model.infection import InfectionRate, get_values_last_infections, get_discharge_date, will_infect, get_risk
 
 
@@ -64,12 +64,14 @@ class AScabEnv(gym.Env):
     """
 
     def __init__(self, location: tuple[float, float] = get_default_location(), dates: tuple[str, str] = get_default_dates(),
-                 weather: pd.DataFrame = None, seed: int = 42, verbose: bool = False):
+                 weather: pd.DataFrame = None, biofix_date: str = None, budbreak_date: str = get_default_budbreak_date(),
+                 seed: int = 42, verbose: bool = False):
         super().reset(seed=seed)
-
         pseudothecia = PseudothecialDevelopment()
-        ascospore = AscosporeMaturation(pseudothecia)
-        lai = LAI()
+        ascospore = AscosporeMaturation(pseudothecia, biofix_date=biofix_date)
+        lai = LAI(start_date=budbreak_date)
+        self.biofix_date = biofix_date
+        self.budbreak_date = budbreak_date
         self.seed = seed
         self.verbose = verbose
         self.dates = tuple(datetime.strptime(date, "%Y-%m-%d").date() for date in dates)
@@ -214,5 +216,6 @@ class AScabEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.__init__(location=self.location, dates=(self.dates[0].strftime("%Y-%m-%d"), self.dates[1].strftime("%Y-%m-%d")),
-                      weather=self.weather, seed=self.seed, verbose=self.verbose)
+                      weather=self.weather, biofix_date=self.biofix_date, budbreak_date=self.budbreak_date,
+                      seed=self.seed, verbose=self.verbose)
         return self._get_observation(), self.get_info()

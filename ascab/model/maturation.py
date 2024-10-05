@@ -4,6 +4,7 @@ import pandas as pd
 
 from ascab.utils.weather import compute_leaf_wetness_duration, is_wet
 from ascab.utils.generic import parse_date
+from ascab.model.infection import get_pat_threshold
 
 
 def get_default_budbreak_date():
@@ -40,6 +41,10 @@ def pat(dhw: np.float32) -> float:
     """
 
     return 1.0 / (1.0 + np.exp(6.89 - 0.035 * dhw))
+
+
+def get_dwh(pat_value: np.float32) -> float:
+    return (np.log((1.0 / pat_value) - 1.0)-6.89) / -0.035
 
 
 class PseudothecialDevelopment:
@@ -132,8 +137,8 @@ class AscosporeMaturation:
 
     def __init__(self, dependency: PseudothecialDevelopment, biofix_date=None):
         super(AscosporeMaturation, self).__init__()
-        self.value = 0
-        self.rate = 0
+        self.value = 0.0
+        self.rate = 0.0
         self._dhw = 0
         self._delta_dhw = 0
         self._dependencies = dependency
@@ -145,6 +150,9 @@ class AscosporeMaturation:
         temperature_2m = df_weather_day['temperature_2m'].values
         day = df_weather_day.index.date[0].timetuple().tm_yday
 
+        if (self.biofix_date is not None and day >= self.biofix_date):
+            self._dhw = max(self._dhw, round(get_dwh(get_pat_threshold())))
+            self.value = max(self.value, get_pat_threshold())
         if (self.biofix_date is not None and day >= self.biofix_date) or pseudothecial_development_has_ended(self._dependencies.value):
             self.rate, self._delta_dhw = self.compute_rate(np.float32(self._dhw), precipitation, vapour_pressure_deficit, temperature_2m)
         else:

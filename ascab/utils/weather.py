@@ -8,6 +8,10 @@ from scipy.ndimage import label
 from ascab.utils.generic import fill_gaps
 
 
+def get_default_vapour_pressure_deficit_threshold():
+    return 0.25  # 2.5 hPa = 0.25kPa
+
+
 def get_meteo(params, forecast: bool = False, verbose: bool = False) -> pd.DataFrame:
     url = "https://archive-api.open-meteo.com/v1/archive"
     if forecast:
@@ -54,7 +58,7 @@ def get_meteo(params, forecast: bool = False, verbose: bool = False) -> pd.DataF
 def is_wet(precipitation, vapour_pressure_deficit):
     # Zandelin, P. (2021). Virtual weather data for apple scab monitoring and management.
     precipitation_threshold = 0.0
-    vapour_pressure_deficit_threshold = 0.25  # 2.5 hPa = 0.25kPa
+    vapour_pressure_deficit_threshold = get_default_vapour_pressure_deficit_threshold()
     result = np.logical_or(
         precipitation > precipitation_threshold,
         vapour_pressure_deficit < vapour_pressure_deficit_threshold,

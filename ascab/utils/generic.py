@@ -1,4 +1,6 @@
 import numpy as np
+import datetime
+from typing import Optional, Union
 
 
 def items_since_last_true(array):
@@ -34,3 +36,24 @@ def fill_gaps(arr, max_gap: int = 2):
     if current_length > 0:
         false_series_lengths[-current_length:] = current_length
     return false_series_lengths <= max_gap
+
+
+def parse_date(input_date: Optional[Union[str, int]]) -> Optional[int]:
+    """
+    Parses input_date, which can be:
+    - None
+    - A day of the year as an integer (e.g., "69")
+    - A date string in the format "%B %d" (e.g., "March 10")
+
+    Returns:
+    - None if input_date is None
+    - An integer representing the day of the year.
+    """
+    if input_date is None:
+        return None
+    elif isinstance(input_date, int) or input_date.isdigit():
+        return int(input_date)  # If input_date is a day of the year (e.g., "69")
+    else:
+        return (
+            datetime.datetime.strptime(input_date, "%B %d").timetuple().tm_yday
+        )  # If it's a date string (e.g., "March 10")

@@ -4,6 +4,7 @@ from retry_requests import retry
 import pandas as pd
 import numpy as np
 from scipy.ndimage import label
+from datetime import datetime, timedelta
 
 from ascab.utils.generic import fill_gaps
 
@@ -11,11 +12,15 @@ from ascab.utils.generic import fill_gaps
 def get_default_vapour_pressure_deficit_threshold():
     return 0.25  # 2.5 hPa = 0.25kPa
 
+def get_default_days_of_forecast():
+    return 2
 
 def get_meteo(params, forecast: bool = False, verbose: bool = False) -> pd.DataFrame:
     url = "https://archive-api.open-meteo.com/v1/archive"
     if forecast:
         url = "https://historical-forecast-api.open-meteo.com/v1/forecast"
+        params['end_date'] = (datetime.strptime(params['end_date'], "%Y-%m-%d") + timedelta(days=get_default_days_of_forecast())).strftime("%Y-%m-%d")
+
 
     # Setup the Open-Meteo API client with cache and retry on error
     cache_session = requests_cache.CachedSession(".cache", expire_after=-1)

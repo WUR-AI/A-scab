@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import random
 
-from ascab.utils.weather import get_meteo, summarize_weather, WeatherSummary
+from ascab.utils.weather import get_meteo, summarize_weather, WeatherSummary, get_default_days_of_forecast
 from ascab.utils.plot import plot_results, plot_infection
 from ascab.model.maturation import PseudothecialDevelopment, AscosporeMaturation, LAI, get_default_budbreak_date
 from ascab.model.infection import InfectionRate, get_values_last_infections, get_discharge_date, will_infect, get_risk
@@ -83,7 +83,11 @@ class AScabEnv(gym.Env):
                      **{name: [] for name, _ in self.models.items()},
                      "Ascospores": [], "Discharge": [], "Infections": [], "Risk": [],
                      **{name: [] for name in WeatherSummary.get_variable_names()},
-                     **{f'Forecast_{name}': [] for name in WeatherSummary.get_variable_names()},
+                     **{
+                         f"Forecast_day{day}_{name}": []
+                         for name in WeatherSummary.get_variable_names()
+                         for day in range(1, get_default_days_of_forecast()+1)
+                     },
                      "Action": [], "Reward": []}
 
         self.observation_space_disease = gym.spaces.Dict({
@@ -102,8 +106,7 @@ class AScabEnv(gym.Env):
                 name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
                 for name, _ in self.info.items()
                 if name in WeatherSummary.get_variable_names()
-                or name.startswith("Forecast_")
-                and name[9:] in WeatherSummary.get_variable_names()
+                or name.startswith("Forecast_") and name.split('_', 2)[-1] in WeatherSummary.get_variable_names()
             }
         )
 
@@ -128,10 +131,11 @@ class AScabEnv(gym.Env):
         weather_observation = df_summary_weather[varnames].to_dict(orient="list")
         [self.info[key].extend(value) for key, value in weather_observation.items() if key != "Date"]
 
-        df_summary_weather_forecast = summarize_weather([self.date + timedelta(days=1)], self.weather_forecast)
-        varnames = [col for col in self.info.keys() if col in df_summary_weather_forecast.columns]
-        weather_forecast = df_summary_weather_forecast[varnames].to_dict(orient="list")
-        [self.info[f'Forecast_{key}'].extend(value) for key, value in weather_forecast.items() if key != "Date"]
+        for day in range(1, get_default_days_of_forecast()+1):
+            df_summary_weather_forecast = summarize_weather([self.date + timedelta(days=day)], self.weather_forecast)
+            varnames = [col for col in self.info.keys() if col in df_summary_weather_forecast.columns]
+            weather_forecast = df_summary_weather_forecast[varnames].to_dict(orient="list")
+            [self.info[f'Forecast_day{day}_{key}'].extend(value) for key, value in weather_forecast.items() if key != "Date"]
 
         df_weather_day = self.weather.loc[self.date.strftime("%Y-%m-%d")]
         for model in self.models.values():

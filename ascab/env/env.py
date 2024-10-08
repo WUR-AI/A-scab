@@ -6,7 +6,7 @@ import random
 
 from ascab.utils.weather import get_meteo, summarize_weather, WeatherSummary, get_default_days_of_forecast
 from ascab.utils.plot import plot_results, plot_infection
-from ascab.model.maturation import PseudothecialDevelopment, AscosporeMaturation, LAI, get_default_budbreak_date
+from ascab.model.maturation import PseudothecialDevelopment, AscosporeMaturation, LAI, Phenology, get_default_budbreak_date
 from ascab.model.infection import InfectionRate, get_values_last_infections, get_discharge_date, will_infect, get_risk
 
 
@@ -70,10 +70,11 @@ class AScabEnv(gym.Env):
         pseudothecia = PseudothecialDevelopment()
         ascospore = AscosporeMaturation(pseudothecia, biofix_date=biofix_date)
         lai = LAI(start_date=budbreak_date)
+        phenology = Phenology()
         self.seed = seed
         self.verbose = verbose
         self.dates = tuple(datetime.strptime(date, "%Y-%m-%d").date() for date in dates)
-        self.models = {type(model).__name__: model for model in [pseudothecia, ascospore, lai]}
+        self.models = {type(model).__name__: model for model in [pseudothecia, ascospore, lai, phenology]}
         self.infections = []
         self.location = location  # latitude, longitude
         self.weather = weather if weather is not None else get_meteo(get_weather_params(location, dates), forecast=False, verbose=False)
@@ -98,7 +99,7 @@ class AScabEnv(gym.Env):
 
         self.observation_space_tree = gym.spaces.Dict({
             name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
-            for name, _ in self.info.items() if name in {"LAI"}
+            for name, _ in self.info.items() if name in {"LAI", "Phenology"}
         })
 
         self.observation_space_weather_summary = gym.spaces.Dict(
@@ -150,7 +151,7 @@ class AScabEnv(gym.Env):
         time_previous, pat_previous = get_values_last_infections(self.infections)
         discharge_date = get_discharge_date(df_weather_day, pat_previous, ascospore_value, time_previous)
 
-        self.info['Discharge'].append(discharge_date is not None)
+        self.info['Discharge'].append((discharge_date is not None) * (ascospore_value - pat_previous))
         self.info['Ascospores'].append(ascospore_value - pat_previous)
         self.info["Action"].append(action)
 

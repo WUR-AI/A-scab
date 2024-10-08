@@ -206,3 +206,49 @@ class LAI:
 
     def integrate(self):
         self.value += self.rate * 1.0
+
+
+def map_temperature_to_bbch(temperature_sum: float) -> float:
+    # Fixed points for BBCH scale
+    bbch_values = np.array([60, 65, 69], dtype=np.float32)
+    temp_sums = np.array([10368, 12546, 15914], dtype=np.float32)
+
+    # Return np.nan if the temperature sum is outside the known range
+    if temperature_sum < temp_sums[0] or temperature_sum > temp_sums[-1]:
+        return 0
+    
+    # Linearly interpolate the BBCH value for the given temperature sum
+    bbch_value = np.interp(temperature_sum, temp_sums, bbch_values)
+    
+    return bbch_value
+
+
+class Phenology:
+    def __init__(self, start_date=45, base_temperature: float = 0.0):
+        super(Phenology, self).__init__()
+        self.value = 0
+        self.temperature_sum = 0.0
+        self.rate = 0.0
+        self.start_date = parse_date(start_date)
+        self.base_temperature = base_temperature
+
+    def update_rate(self, df_weather_day: pd.DataFrame):
+        day = df_weather_day.index.date[0].timetuple().tm_yday
+        temperature_hourly = df_weather_day['temperature_2m']
+        self.rate = self.compute_rate(self.start_date, self.base_temperature, day, temperature_hourly)
+        return self.rate
+
+    @staticmethod
+    def compute_rate(start_day: int, base_temperature: float, day: int, temperature_hourly: np.ndarray[1, np.float32],):
+        # Calculate the daily change
+        temperature_diff = np.maximum(0, temperature_hourly - base_temperature)
+        # Sum over the 24 hours
+        dy_dt = np.sum(temperature_diff)
+        # Check conditions and modify dy_dt accordingly
+        condition = (day < start_day)
+        dy_dt = np.where(condition, 0.0, dy_dt)
+        return dy_dt
+
+    def integrate(self):
+        self.temperature_sum += self.rate * 1.0
+        self.value = map_temperature_to_bbch(self.temperature_sum)

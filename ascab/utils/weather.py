@@ -12,8 +12,10 @@ from ascab.utils.generic import fill_gaps
 def get_default_vapour_pressure_deficit_threshold():
     return 0.25  # 2.5 hPa = 0.25kPa
 
+
 def get_default_days_of_forecast():
     return 2
+
 
 def get_meteo(params, forecast: bool = False, verbose: bool = False) -> pd.DataFrame:
     url = "https://archive-api.open-meteo.com/v1/archive"

@@ -4,6 +4,7 @@ from gymnasium.wrappers import FlattenObservation, FilterObservation
 from ascab.utils.plot import plot_results
 from ascab.env.env import AScabEnv
 
+
 try:
     from stable_baselines3 import PPO
 except ImportError:
@@ -55,8 +56,8 @@ def cheating_agent(ascab: AScabEnv = None, render=True):
     while not terminated:
         action = 0.0
         if (
-            ascab.get_wrapper_attr("info")["Risk"]
-            and ascab.get_wrapper_attr("info")["Risk"][-1] > 0.05
+            ascab.get_wrapper_attr("info")["Discharge"]
+            and ascab.get_wrapper_attr("info")["Discharge"][-1] > 0.5
         ):
             action = 1.0
         _, reward, terminated, _, _ = ascab.step(action)
@@ -109,14 +110,16 @@ def fixed_schedule_agent(
 
 
 if __name__ == "__main__":
-    ascab_env = AScabEnv()
+    ascab_env = AScabEnv(
+        location=(42.1620, 3.0924), dates=("2022-02-15", "2022-08-15"),
+        biofix_date="March 10", budbreak_date="March 10")
     print("zero agent")
-    ascab_zero = zero_agent(ascab_env)  # -0.634
+    ascab_zero = zero_agent(ascab_env, render=False)  # -0.634
     print("cheating agent")
-    ascab_cheating = cheating_agent(ascab_env)
+    ascab_cheating = cheating_agent(ascab_env, render=False)
     if PPO is not None:
         print("rl agent")
-        ascab_rl = rl_agent(ascab_env, 5)
-        plot_results({"zero": ascab_zero, "cheater": ascab_cheating, "rl_agent": ascab_rl})
+        ascab_rl = rl_agent(ascab=ascab_env, observation_filter=["weather", "tree", "disease"], n_steps=50000, render=False)
+        plot_results({"zero": ascab_zero, "cheater": ascab_cheating, "rl_agent": ascab_rl}, variables=["HasRain", "LeafWetness", "PseudothecialDevelopment", "AscosporeMaturation", "Discharge", "Infections", "Risk", "Action"])
     else:
         print("Stable-baselines3 is not installed. Skipping RL agent.")

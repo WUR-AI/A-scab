@@ -7,8 +7,8 @@ from ascab.model.infection import InfectionRate, get_pat_threshold
 
 
 def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variables: list[str] = None):
-    if not isinstance(results, dict):
-        results = {"": results}
+    results = {"": results} if not isinstance(results, dict) else results
+    alpha = 1.0 if len(results) == 1 else 0.5
 
     if variables is None:
         variables = list(results.values())[0].columns.tolist()
@@ -63,11 +63,11 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variab
                         x_coordinate = df.loc[first_pass_index, 'Date']  # Get the corresponding date value
                         ax.axvline(x=x_coordinate, color='red', linestyle='--', label=f'Threshold ({threshold})')
 
-    plt.xticks(rotation=0)
+
     ax = axes[-1] if num_variables > 1 else axes
-    # Set the x-axis major formatter to display abbreviated month names
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
-    ax.tick_params(axis="x", pad=10)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+    fig.autofmt_xdate(rotation=0)
+    plt.setp(ax.get_xticklabels(), ha="center")
     all_years = pd.to_datetime(
         pd.concat([df["Date"] for df in results.values()])
     ).dt.year.unique()

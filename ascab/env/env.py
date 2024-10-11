@@ -7,7 +7,7 @@ import random
 from ascab.utils.weather import get_meteo, summarize_weather, WeatherSummary, get_default_days_of_forecast
 from ascab.utils.plot import plot_results, plot_infection
 from ascab.model.maturation import PseudothecialDevelopment, AscosporeMaturation, LAI, Phenology, get_default_budbreak_date
-from ascab.model.infection import InfectionRate, get_values_last_infections, get_discharge_date, will_infect, get_risk
+from ascab.model.infection import InfectionRate, Pesticide, get_values_last_infections, get_discharge_date, will_infect, get_risk
 
 
 def get_default_location():
@@ -71,6 +71,7 @@ class AScabEnv(gym.Env):
         ascospore = AscosporeMaturation(pseudothecia, biofix_date=biofix_date)
         lai = LAI(start_date=budbreak_date)
         phenology = Phenology()
+        self.pesticide = Pesticide(growth_diminish_rate_per_hour=0.006)
         self.seed = seed
         self.verbose = verbose
         self.dates = tuple(datetime.strptime(date, "%Y-%m-%d").date() for date in dates)
@@ -82,7 +83,7 @@ class AScabEnv(gym.Env):
         self.date = datetime.strptime(dates[0], '%Y-%m-%d').date()
         self.info = {"Date": [],
                      **{name: [] for name, _ in self.models.items()},
-                     "Ascospores": [], "Discharge": [], "Infections": [], "Risk": [],
+                     "Ascospores": [], "Discharge": [], "Infections": [], "Risk": [], "Pesticide": [],
                      **{name: [] for name in WeatherSummary.get_variable_names()},
                      **{
                          f"Forecast_day{day}_{name}": []
@@ -146,6 +147,8 @@ class AScabEnv(gym.Env):
         for model in self.models.values():
             self.info[model.__class__.__name__].append(model.value)
 
+        self.pesticide.update(df_weather_day=df_weather_day, action=action)
+
         lai_value = self.models['LAI'].value
         ascospore_value = self.models['AscosporeMaturation'].value
         time_previous, pat_previous = get_values_last_infections(self.infections)
@@ -154,6 +157,7 @@ class AScabEnv(gym.Env):
         self.info['Discharge'].append((discharge_date is not None) * (ascospore_value - pat_previous))
         self.info['Ascospores'].append(ascospore_value - pat_previous)
         self.info["Action"].append(action)
+        self.info["Pesticide"].append(self.pesticide.effective_coverage[-1])
 
         if discharge_date is not None:
             end_day = self.date + timedelta(days=5)
@@ -165,7 +169,7 @@ class AScabEnv(gym.Env):
             else:
                 if self.verbose: print(f'No infection {infection_duration} {infection_temperature}')
         for infection in self.infections:
-            infection.progress(df_weather_day, action)
+            infection.progress(df_weather_day, self.pesticide.effective_coverage)
         self.info["Infections"].append(len(self.infections))
         self.info["Risk"].append(get_risk(self.infections, self.date))
         o = self._get_observation()
@@ -205,7 +209,7 @@ class AScabEnv(gym.Env):
     def _get_reward(self):
         risk = self.info["Risk"][-1]
         action = self.info["Action"][-1]
-        result = -risk -(action * 0.025)
+        result = -risk - (action * 0.025)
         return float(result)
 
     def render(self):

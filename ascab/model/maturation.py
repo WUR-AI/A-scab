@@ -210,10 +210,12 @@ class LAI:
 
 def map_temperature_to_bbch(temperature_sum: float) -> float:
     # Fixed points for BBCH scale
+    # Stoeckli, S., & Samietz, J. Simplified modelling of Apple flowering phenology for application in climate change scenarios.
+    # IX International Symposium on Modelling in Fruit Research and Orchard Management 1068 (pp. 153-160).
     bbch_values = np.array([60, 65, 69], dtype=np.float32)
     temp_sums = np.array([10368, 12546, 15914], dtype=np.float32)
 
-    # Return np.nan if the temperature sum is outside the known range
+    # Return zero if the temperature sum is outside the known range
     if temperature_sum < temp_sums[0] or temperature_sum > temp_sums[-1]:
         return 0
     

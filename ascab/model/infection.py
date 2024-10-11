@@ -439,7 +439,7 @@ class InfectionRate:
         self.mor2 = []
         self.mor3 = []
 
-    def progress(self, df_weather_day, action=0):
+    def progress(self, df_weather_day, pesticide_levels: np.ndarray[1, np.float32]):
         temperatures = df_weather_day["temperature_2m"].to_numpy()
 
         day = df_weather_day.index.date[0]
@@ -480,10 +480,9 @@ class InfectionRate:
             dm2 = compute_ds2_mor(hours_since_rain, temperatures, humidities)
             dm3 = compute_ds3_mor(hours_since_rain, temperatures)
 
-            if action:
-                dm1[:] = action
-                dm2[:] = action
-                dm3[:] = action
+            dm1 = np.clip(dm1 + pesticide_levels, 0.0, 1.0)
+            dm2 = np.clip(dm2 + pesticide_levels, 0.0, 1.0)
+            dm3 = dm3
 
             total_population = self.total_population[-1] if self.total_population else 1.0
             total_mortality = dm1 * s1 + dm2 * s2 + dm3 * s3
@@ -559,3 +558,105 @@ def get_risk(infections: list[InfectionRate], date: datetime.date) -> np.float64
 
     result = np.sum(risks) if len(risks) != 0 else 0.0
     return result
+
+
+class PesticideApplication:
+    """
+    Represents a pesticide application event.
+
+    Attributes:
+        amount (float): The amount of pesticide applied.
+        coverage (float): The coverage percentage (0.0 to 1.0).
+        remaining_pesticide (float): The amount of pesticide remaining after wash-off.
+    """
+
+    def __init__(self, amount: float, removal_rate_per_mm_rain: float, application_datetime: datetime):
+        self.amount = amount
+        self.coverage = 1.0  # Initial coverage set to 100%
+        self.remaining_pesticide = amount  # initially, all pesticide is remaining
+        self.removal_rate_per_mm_rain = removal_rate_per_mm_rain
+        self.application_datetime = application_datetime
+
+    def update_remaining(self, rain: float):
+        """
+        Updates the remaining pesticide after considering wash-off due to rain.
+
+        Args:
+            rain (float): Amount of rain (in mm) that affects wash-off.
+        """
+        wash_off = self.remaining_pesticide * (self.removal_rate_per_mm_rain * rain)
+        self.remaining_pesticide = max(0.0, self.remaining_pesticide - wash_off)
+
+    def update_coverage(self, growth_diminish_rate_per_hour=0.006):
+        """
+        Updates the coverage based on the growth diminish rate.
+        """
+        self.coverage = max(0.0, self.coverage - growth_diminish_rate_per_hour)
+
+    def is_application_valid(self, current_datetime: datetime):
+        """
+        Checks if the application date has passed.
+
+        Args:
+            current_datetime (datetime): The current date and time to check against.
+
+        Returns:
+            bool: True if the application date has passed, False otherwise.
+        """
+        return self.application_datetime <= current_datetime
+
+
+class Pesticide:
+    """
+    Represents the amount of pesticide present over time, considering decay and application.
+
+    Attributes:
+        pesticide_levels (list[float]): A list containing the pesticide amount for each hour (24 elements).
+        applications (list[PesticideApplication]): List of pesticide applications.
+    """
+
+    def __init__(self, growth_diminish_rate_per_hour: float = 0.006):
+        """
+        Initializes the Pesticide class with an initial amount.
+
+        Args:
+            initial_amount (float): The initial amount of pesticide present.
+        """
+        self.applications = []  # List to hold all pesticide applications
+        self.growth_diminish_rate_per_hour = growth_diminish_rate_per_hour  # Coverage diminishes by this rate per hour
+        self.effective_coverage = [0.0] * 24  # Initialize effective coverage for 24 hours
+
+    def apply_pesticide(self, amount: float, application_datetime: datetime, removal_rate_per_mm_rain: float = 0.1):
+        """Applies pesticide at a specific hour."""
+        self.applications.append(PesticideApplication(amount=amount, application_datetime=application_datetime,
+                                                      removal_rate_per_mm_rain=removal_rate_per_mm_rain))
+
+    def update(self, df_weather_day: pd.DataFrame, action):
+        """
+        Updates the pesticide levels based on rainfall and actions (application).
+
+        Parameters:
+        - df_weather_day (pd.DataFrame): A DataFrame containing hourly weather data of a selected day
+
+        """
+
+        rains = df_weather_day["precipitation"].to_numpy()
+        rains = np.pad(rains, (0, max(0, 24 - len(rains))), "edge")
+        # Reset effective coverage for each hour
+        self.effective_coverage = [0.0] * 24
+        day = df_weather_day.index.date[0]
+
+        if action > 0.0:
+            application_time = datetime.datetime.combine(day, datetime.datetime.min.time()) + datetime.timedelta(hours=8)
+            self.apply_pesticide(amount=action, removal_rate_per_mm_rain=0.02, application_datetime=application_time)
+
+        for hour in range(24):
+            current_datetime = datetime.datetime.combine(day, datetime.datetime.min.time()) + datetime.timedelta(hours=hour)
+            for application in self.applications:
+                if application.is_application_valid(current_datetime):
+                    application.update_remaining(rains[hour])
+                    application.update_coverage(growth_diminish_rate_per_hour=0.006)  # Update coverage for each application
+
+                    # Calculate the effective coverage for the hour
+                    effective_coverage_for_hour = application.remaining_pesticide * application.coverage
+                    self.effective_coverage[hour] += effective_coverage_for_hour

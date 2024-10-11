@@ -83,6 +83,23 @@ def zero_agent(ascab: AScabEnv = None, render=True):
     return ascab.get_info(to_dataframe=True)
 
 
+def fill_it_up_agent(ascab: AScabEnv = None, pesticide_threshold: float = 0.1, render=True):
+    if ascab is None:
+        ascab = AScabEnv()
+    terminated = False
+    total_reward = 0.0
+    while not terminated:
+        action = 0.0
+        if (ascab.get_wrapper_attr("info")["Pesticide"] and ascab.get_wrapper_attr("info")["Pesticide"][-1] < pesticide_threshold):
+            action = 1.0
+        _, reward, terminated, _, _ = ascab.step(action)
+        total_reward += reward
+    print(f"reward: {total_reward}")
+    if render:
+        ascab.render()
+    return ascab.get_info(to_dataframe=True)
+
+
 def fixed_schedule_agent(
     ascab: AScabEnv = None, dates: list[datetime.date] = None, render=True
 ):

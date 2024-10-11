@@ -27,12 +27,12 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variab
 
     num_variables = len(variables)
     fig, axes = plt.subplots(num_variables, 1, figsize=(7, 3 * num_variables), sharex=True)
-
     for index_results, (df_key, df) in enumerate(results.items()):
-        reward = df["Reward"].sum()
-        reward_string = (f"Reward: {reward.item():.2f}" if isinstance(reward, np.ndarray) and reward.size == 1
-                         else f"{reward:.2f}")
-
+        if "Reward" in df.columns:
+            reward = df["Reward"].sum()
+            reward_string = (f"Reward: {reward.item():.2f}" if isinstance(reward, np.ndarray) and reward.size == 1 else f"{reward:.2f}")
+        else:
+            reward_string = "N/A"
         # Iterate over each variable and create a subplot for it
         for i, variable in enumerate(variables):
             ax = axes[i] if num_variables > 1 else axes  # If only one variable, axes is not iterable
@@ -41,7 +41,7 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variab
                 ax.text(0.015, 0.85, variable, transform=ax.transAxes, verticalalignment="top",horizontalalignment="left",
                         bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round,pad=0.25'))
 
-            ax.step(df['Date'], df[variable], label=f'{df_key} ({reward_string})', where='post', alpha=0.5)
+            ax.step(df['Date'], df[variable], label=f'{df_key} {reward_string}', where='post', alpha=alpha)
             if i == 0: ax.legend()
 
             if variable == 'LeafWetness':

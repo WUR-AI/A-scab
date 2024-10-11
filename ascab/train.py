@@ -1,4 +1,5 @@
 import datetime
+import os
 from gymnasium.wrappers import FlattenObservation, FilterObservation
 
 from ascab.utils.plot import plot_results
@@ -20,6 +21,7 @@ def rl_agent(
     n_steps=5000,
     observation_filter=get_default_observation_filter(),
     render=True,
+    path_save: str = None
 ):
     if PPO is None:
         raise ImportError(
@@ -32,8 +34,14 @@ def rl_agent(
         print(f"filter observations: {observation_filter}")
         ascab = FilterObservation(ascab, filter_keys=observation_filter)
     ascab = FlattenObservation(ascab)
-    model = PPO("MlpPolicy", ascab, verbose=1, seed=42)
-    model.learn(total_timesteps=n_steps)
+    if path_save is not None and (os.path.exists(path_save) or os.path.exists(path_save + ".zip")):
+        print(f'load model from disk: {path_save}')
+        model = PPO.load(env=ascab, path=path_save, print_system_info=False)
+    else:
+        model = PPO("MlpPolicy", ascab, verbose=1, seed=42)
+        model.learn(total_timesteps=n_steps)
+        if path_save is not None:
+            model.save(path_save)
     terminated = False
     total_reward = 0.0
     observation, _ = ascab.reset()

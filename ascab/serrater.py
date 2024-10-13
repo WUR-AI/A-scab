@@ -3,7 +3,7 @@ from datetime import timedelta
 import math
 import numpy as np
 from ascab.env.env import AScabEnv
-from ascab.train import cheating_agent, zero_agent, fixed_schedule_agent
+from ascab.train import CheatingAgent, ZeroAgent, ScheduleAgent
 from ascab.utils.plot import plot_results
 
 

@@ -480,8 +480,8 @@ class InfectionRate:
             dm2 = compute_ds2_mor(hours_since_rain, temperatures, humidities)
             dm3 = compute_ds3_mor(hours_since_rain, temperatures)
 
-            dm1 = np.clip(dm1 + pesticide_levels, 0.0, 1.0)
-            dm2 = np.clip(dm2 + pesticide_levels, 0.0, 1.0)
+            dm1 = np.clip(dm1 + pesticide_levels[: len(dm1)], 0.0, 1.0)
+            dm2 = np.clip(dm2 + pesticide_levels[: len(dm1)], 0.0, 1.0)
             dm3 = dm3
 
             total_population = self.total_population[-1] if self.total_population else 1.0

@@ -123,6 +123,30 @@ def summarize_weather(dates, df_weather: pd.DataFrame):
     return result
 
 
+def construct_key(latitude, longitude, start_date, end_date):
+    return f"{latitude}_{longitude}_{start_date}_{end_date}"
+
+
+class WeatherDataLibrary:
+    def __init__(self):
+        self.data = {}
+
+    def collect_weather(self, params, key=None):
+        if key is None:
+            key = construct_key(params["latitude"], params["longitude"], params["start_date"], params["end_date"])
+
+        weather_data = get_meteo(params, forecast=False)
+        forecast_data = get_meteo(params, forecast=True)
+
+        self.data[key] = {"weather": weather_data, "forecast": forecast_data}
+
+    def get_weather(self, key):
+        return self.data.get(key, {}).get("weather", None)
+
+    def get_forecast(self, key):
+        return self.data.get(key, {}).get("forecast", None)
+
+
 def is_rain_event(
     df_weather_day: pd.DataFrame, threshold: float = 0.2, max_gap: int = 2
 ):
@@ -131,6 +155,22 @@ def is_rain_event(
     precipitation = df_weather_day["precipitation"].to_numpy()
     rain = precipitation >= threshold
     result = fill_gaps(rain, max_gap=max_gap)
+    return result
+
+
+def get_first_full_day(df_weather: pd.DataFrame):
+    result = (df_weather.groupby(df_weather.index.date)
+                        .filter(lambda group: group.index.hour.nunique() == 24)
+                        .index.min()
+                        .date())
+    return result
+
+
+def get_last_full_day(df_weather: pd.DataFrame):
+    result = (df_weather.groupby(df_weather.index.date)
+                        .filter(lambda group: group.index.hour.nunique() == 24)
+                        .index.max()
+                        .date())
     return result
 
 

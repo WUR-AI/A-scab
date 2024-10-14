@@ -3,8 +3,10 @@ import pandas as pd
 from datetime import datetime, timedelta
 import numpy as np
 import random
+from typing import List, Optional
 
-from ascab.utils.weather import get_meteo, summarize_weather, WeatherSummary, get_default_days_of_forecast
+from ascab.utils.weather import (get_meteo, summarize_weather, WeatherSummary, get_default_days_of_forecast,
+                                 WeatherDataLibrary, get_first_full_day, get_last_full_day)
 from ascab.utils.plot import plot_results, plot_infection
 from ascab.model.maturation import PseudothecialDevelopment, AscosporeMaturation, LAI, Phenology, get_default_budbreak_date
 from ascab.model.infection import InfectionRate, Pesticide, get_values_last_infections, get_discharge_date, will_infect, get_risk
@@ -42,6 +44,14 @@ def get_weather_params(location: tuple[float, float] = None, dates: tuple[str, s
     return params
 
 
+def get_weather_library(locations: List[tuple[float, float]], dates: List[tuple[str, str]]):
+    result = WeatherDataLibrary()
+    for location in locations:
+        for date_range in dates:
+            result.collect_weather(params=get_weather_params(location=location, dates=date_range))
+    return result
+
+
 class AScabEnv(gym.Env):
     """
     Gymnasium Environment for Apple Scab Model (A-scab)
@@ -64,23 +74,57 @@ class AScabEnv(gym.Env):
     """
 
     def __init__(self, location: tuple[float, float] = get_default_location(), dates: tuple[str, str] = get_default_dates(),
-                 weather: pd.DataFrame = None, biofix_date: str = None, budbreak_date: str = get_default_budbreak_date(),
+                 weather: pd.DataFrame = None, weather_forecast: pd.DataFrame = None,
+                 biofix_date: str = None, budbreak_date: str = get_default_budbreak_date(),
                  seed: int = 42, verbose: bool = False):
         super().reset(seed=seed)
+
+        self.seed = seed
+        self.verbose = verbose
+        self.dates = tuple(datetime.strptime(date, "%Y-%m-%d").date() for date in dates)
+        self.weather = weather if weather is not None else get_meteo(get_weather_params(location, dates), forecast=False, verbose=False)
+        self.weather_forecast = weather_forecast if weather_forecast is not None else get_meteo(params=get_weather_params(location, dates), forecast=True, verbose=False)
+
+        self._reset_internal(biofix_date=biofix_date, budbreak_date=budbreak_date)
+
+        self.observation_space_disease = gym.spaces.Dict({
+            name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
+            for name, _ in self.info.items()
+            if name in {"AscosporeMaturation", "PseudothecialDevelopment", "Ascospores", "Infections", "Risk"}
+        })
+        self.observation_space_tree = gym.spaces.Dict({
+            name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
+            for name, _ in self.info.items() if name in {"LAI", "Phenology"}
+        })
+        self.observation_space_weather_summary = gym.spaces.Dict(
+            {
+                name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
+                for name, _ in self.info.items()
+                if name in WeatherSummary.get_variable_names()
+                or name.startswith("Forecast_") and name.split('_', 2)[-1] in WeatherSummary.get_variable_names()
+            }
+        )
+        self.observation_space = gym.spaces.Dict(
+            {
+                "disease": self.observation_space_disease,
+                "tree": self.observation_space_tree,
+                "weather": self.observation_space_weather_summary,
+            }
+        )
+        self.action_space = gym.spaces.Box(0, 1.0, shape=(), dtype=np.float32)
+        self.render_mode = 'human'
+
+    def _reset_internal(self, biofix_date: str, budbreak_date: str):
         pseudothecia = PseudothecialDevelopment()
         ascospore = AscosporeMaturation(pseudothecia, biofix_date=biofix_date)
         lai = LAI(start_date=budbreak_date)
         phenology = Phenology()
         self.pesticide = Pesticide(growth_diminish_rate_per_hour=0.006)
-        self.seed = seed
-        self.verbose = verbose
-        self.dates = tuple(datetime.strptime(date, "%Y-%m-%d").date() for date in dates)
+
         self.models = {type(model).__name__: model for model in [pseudothecia, ascospore, lai, phenology]}
         self.infections = []
-        self.location = location  # latitude, longitude
-        self.weather = weather if weather is not None else get_meteo(get_weather_params(location, dates), forecast=False, verbose=False)
-        self.weather_forecast = get_meteo(params=get_weather_params(location, dates), forecast=True, verbose=False)
-        self.date = datetime.strptime(dates[0], '%Y-%m-%d').date()
+
+        self.date = self.dates[0]
         self.info = {"Date": [],
                      **{name: [] for name, _ in self.models.items()},
                      "Ascospores": [], "Discharge": [], "Infections": [], "Risk": [], "Pesticide": [],
@@ -91,36 +135,6 @@ class AScabEnv(gym.Env):
                          for day in range(1, get_default_days_of_forecast()+1)
                      },
                      "Action": [], "Reward": []}
-
-        self.observation_space_disease = gym.spaces.Dict({
-            name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
-            for name, _ in self.info.items()
-            if name in {"AscosporeMaturation", "PseudothecialDevelopment", "Ascospores", "Infections", "Risk"}
-        })
-
-        self.observation_space_tree = gym.spaces.Dict({
-            name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
-            for name, _ in self.info.items() if name in {"LAI", "Phenology"}
-        })
-
-        self.observation_space_weather_summary = gym.spaces.Dict(
-            {
-                name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
-                for name, _ in self.info.items()
-                if name in WeatherSummary.get_variable_names()
-                or name.startswith("Forecast_") and name.split('_', 2)[-1] in WeatherSummary.get_variable_names()
-            }
-        )
-
-        self.observation_space = gym.spaces.Dict(
-            {
-                "disease": self.observation_space_disease,
-                "tree": self.observation_space_tree,
-                "weather": self.observation_space_weather_summary,
-            }
-        )
-        self.action_space = gym.spaces.Box(0, 1.0, shape=(), dtype=np.float32)
-        self.render_mode = 'human'
 
     def step(self, action):
         """
@@ -217,14 +231,39 @@ class AScabEnv(gym.Env):
         plot_results(df_info)
 
         if self.infections:
+            for infection in self.infections:
+                plot_infection(infection)
             plot_infection(max(self.infections, key=lambda x: x.risk[-1][1]))
             plot_infection(random.choice(self.infections))
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.__init__(location=self.location, dates=(self.dates[0].strftime("%Y-%m-%d"), self.dates[1].strftime("%Y-%m-%d")),
-                      weather=self.weather,
-                      biofix_date=self.models['AscosporeMaturation'].biofix_date,
-                      budbreak_date=self.models['LAI'].start_date,
-                      seed=self.seed, verbose=self.verbose)
+        self._reset_internal(biofix_date=self.models['AscosporeMaturation'].biofix_date,
+                             budbreak_date=self.models['LAI'].start_date)
         return self._get_observation(), self.get_info()
+
+
+class MultipleWeatherASCabEnv(AScabEnv):
+    def __init__(self, weather_data_library: WeatherDataLibrary, *args, **kwargs):
+        self.weather_data_library = weather_data_library
+        self.set_weather()
+        super().__init__(dates=(self.dates[0].strftime("%Y-%m-%d"), self.dates[1].strftime("%Y-%m-%d")),
+                         weather=self.weather, weather_forecast=self.weather_forecast,
+                         *args, **kwargs)
+
+    def set_weather(self, key=None):
+        if key is None:
+            keys = list(self.weather_data_library.data.keys())
+            key = self.np_random.choice(keys)
+        print(key)
+        self.weather = self.weather_data_library.get_weather(key)
+        self.weather_forecast = self.weather_data_library.get_forecast(key)
+        start_date = get_first_full_day(self.weather)
+        end_date = get_last_full_day(self.weather)
+        self.dates = start_date, end_date
+
+    def reset(self, seed=None, options=None):
+        print('reset')
+        random_key = self.np_random.choice(list(self.weather_data_library.data.keys()))
+        self.set_weather(random_key)
+        return super().reset()

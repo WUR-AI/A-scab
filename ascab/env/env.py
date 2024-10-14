@@ -263,7 +263,6 @@ class MultipleWeatherASCabEnv(AScabEnv):
         self.dates = start_date, end_date
 
     def reset(self, seed=None, options=None):
-        print('reset')
         random_key = self.np_random.choice(list(self.weather_data_library.data.keys()))
         self.set_weather(random_key)
         return super().reset()

@@ -7,7 +7,7 @@ from gymnasium.wrappers import FlattenObservation, FilterObservation
 
 
 from ascab.utils.plot import plot_results
-from ascab.env.env import AScabEnv
+from ascab.env.env import AScabEnv, MultipleWeatherASCabEnv, get_weather_library
 
 
 try:
@@ -98,13 +98,16 @@ class ScheduleAgent(BaseAgent):
 class RLAgent(BaseAgent):
     def __init__(
         self,
-        ascab: Optional[AScabEnv] = None,
+        ascab_train: Optional[AScabEnv] = None,
+        ascab_test: Optional[AScabEnv] = None,
         n_steps: int = 5000,
         observation_filter: Optional[list] = get_default_observation_filter(),
         render: bool = True,
         path_model: Optional[str] = None,
     ):
-        super().__init__(ascab=ascab, render=render)
+        super().__init__(ascab=ascab_train, render=render)
+        self.ascab_train = ascab_train
+        self.ascab = ascab_test
         self.n_steps = n_steps
         self.observation_filter = observation_filter
         self.path_model = path_model
@@ -119,13 +122,15 @@ class RLAgent(BaseAgent):
             )
         if self.observation_filter:
             print(f"Filter observations: {self.observation_filter}")
+            self.ascab_train = FilterObservation(self.ascab_train, filter_keys=self.observation_filter)
             self.ascab = FilterObservation(self.ascab, filter_keys=self.observation_filter)
+        self.ascab_train = FlattenObservation(self.ascab_train)
         self.ascab = FlattenObservation(self.ascab)
         if self.path_model is not None and (os.path.exists(self.path_model) or os.path.exists(path_save + ".zip")):
             print(f'Load model from disk: {self.path_model}')
-            self.model = PPO.load(env=self.ascab, path=self.path_model, print_system_info=False)
+            self.model = PPO.load(env=self.ascab_train, path=self.path_model, print_system_info=False)
         else:
-            self.model = PPO("MlpPolicy", self.ascab, verbose=1, seed=42)
+            self.model = PPO("MlpPolicy", self.ascab_train, verbose=1, seed=42)
             self.model.learn(total_timesteps=self.n_steps)
             if self.path_model is not None:
                 self.model.save(self.path_model)
@@ -157,10 +162,18 @@ if __name__ == "__main__":
 
     if PPO is not None:
         print("rl agent")
-        path_save = os.path.join(os.getcwd(), "rl_agent")
-        ascab_rl = RLAgent(ascab=ascab_env, observation_filter=["weather", "tree", "disease"], n_steps=5, render=False, path_model=path_save)
+        path_save = os.path.join(os.getcwd(), "rl_2023_2024")
+        ascab_train = MultipleWeatherASCabEnv(
+            weather_data_library=get_weather_library(
+                locations=[(42.1620, 3.0924)], dates=[("2023-03-01", "2023-09-30"), ("2024-03-01", "2024-09-30")]
+            ),
+            biofix_date="March 10",
+            budbreak_date="March 10",
+        )
+        ascab_rl = RLAgent(ascab_train=ascab_train, ascab_test=ascab_env, observation_filter=["weather", "tree"], n_steps=50000, render=False, path_model=path_save)
         ascab_rl_results = ascab_rl.run()
-        plot_results({"zero": zero_results, "filler": filling_results, "rl": ascab_rl_results, "schedule": schedule_results},
-                     variables=["HasRain", "LeafWetness", "AscosporeMaturation", "Discharge", "Infections", "Pesticide", "Risk", "Action"])
+        print(ascab_train.histogram)
+        plot_results({"zero": zero_results, "filler": filling_results, "rl": ascab_rl_results},
+                     variables=["Precipitation", "LeafWetness", "AscosporeMaturation", "Discharge", "Infections", "Pesticide", "Risk", "Action"])
     else:
         print("Stable-baselines3 is not installed. Skipping RL agent.")

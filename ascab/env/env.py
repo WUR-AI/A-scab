@@ -3,13 +3,14 @@ import pandas as pd
 from datetime import datetime, timedelta
 import numpy as np
 import random
-from typing import List, Optional
+from typing import List
+from collections import defaultdict
 
 from ascab.utils.weather import (get_meteo, summarize_weather, WeatherSummary, get_default_days_of_forecast,
                                  WeatherDataLibrary, get_first_full_day, get_last_full_day)
 from ascab.utils.plot import plot_results, plot_infection
 from ascab.model.maturation import PseudothecialDevelopment, AscosporeMaturation, LAI, Phenology, get_default_budbreak_date
-from ascab.model.infection import InfectionRate, Pesticide, get_values_last_infections, get_discharge_date, will_infect, get_risk
+from ascab.model.infection import InfectionRate, Pesticide, get_values_last_infections, get_discharge_date, will_infect, get_risk, get_pat_threshold
 
 
 def get_default_location():
@@ -247,6 +248,7 @@ class MultipleWeatherASCabEnv(AScabEnv):
     def __init__(self, weather_data_library: WeatherDataLibrary, *args, **kwargs):
         self.weather_data_library = weather_data_library
         self.set_weather()
+        self.histogram = defaultdict(int)
         super().__init__(dates=(self.dates[0].strftime("%Y-%m-%d"), self.dates[1].strftime("%Y-%m-%d")),
                          weather=self.weather, weather_forecast=self.weather_forecast,
                          *args, **kwargs)
@@ -255,7 +257,6 @@ class MultipleWeatherASCabEnv(AScabEnv):
         if key is None:
             keys = list(self.weather_data_library.data.keys())
             key = self.np_random.choice(keys)
-        print(key)
         self.weather = self.weather_data_library.get_weather(key)
         self.weather_forecast = self.weather_data_library.get_forecast(key)
         start_date = get_first_full_day(self.weather)
@@ -265,4 +266,15 @@ class MultipleWeatherASCabEnv(AScabEnv):
     def reset(self, seed=None, options=None):
         random_key = self.np_random.choice(list(self.weather_data_library.data.keys()))
         self.set_weather(random_key)
+        self.histogram[random_key] = self.histogram[random_key] +1
         return super().reset()
+
+
+class ActionConstrainer(gym.ActionWrapper):
+    def __init__(self, env: AScabEnv):
+        super(ActionConstrainer, self).__init__(env)
+
+    def action(self, action):
+        if self.unwrapped.models["AscosporeMaturation"].value < get_pat_threshold() or self.unwrapped.models["AscosporeMaturation"].value > 0.99:
+            return action * 0.0
+        return action

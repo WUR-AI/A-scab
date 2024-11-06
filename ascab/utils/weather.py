@@ -3,8 +3,11 @@ import requests_cache
 from retry_requests import retry
 import pandas as pd
 import numpy as np
+import math
 from scipy.ndimage import label
 from datetime import datetime, timedelta
+from astral import LocationInfo
+from astral.sun import sun
 
 from ascab.utils.generic import fill_gaps
 
@@ -17,12 +20,59 @@ def get_default_days_of_forecast():
     return 2
 
 
-def get_meteo(params, forecast: bool = False, verbose: bool = False) -> pd.DataFrame:
-    url = "https://archive-api.open-meteo.com/v1/archive"
-    if forecast:
-        url = "https://historical-forecast-api.open-meteo.com/v1/forecast"
-        params['end_date'] = (datetime.strptime(params['end_date'], "%Y-%m-%d") + timedelta(days=get_default_days_of_forecast())).strftime("%Y-%m-%d")
+def compute_vpd(temp: float, rh: float) -> float:
+    vp_sat = 0.6108 * math.exp((17.27 * temp) / (237.3 + temp))
+    result = vp_sat * (1-(rh/100.0))
+    return result
 
+
+def compute_is_daylight(df: pd.DataFrame, latitude: float, longitude: float, timezone: str):
+    city = LocationInfo(latitude=latitude, longitude=longitude, timezone=timezone)
+    df['is_day'] = 0  # New column to store the updated `is_day`
+    # Loop over unique dates in the DataFrame
+    for date in df.index.normalize().unique():
+        # Calculate sunrise and sunset for the date
+        day_info = sun(city.observer, date=date, tzinfo=city.timezone)
+        sunrise = day_info['sunrise']
+        sunset = day_info['sunset']
+        # Check if each hour is during daylight and update `is_day` column
+        df.loc[(df.index >= sunrise) & (df.index <= sunset), 'is_day'] = 1
+    return df
+
+
+def get_days_of_forecast(params: dict) -> int:
+    forecast_days = max(
+        (int(col.split('previous_day')[-1]) for col in params['hourly'] if 'previous_day' in col),
+        default=0
+    )
+    return forecast_days
+
+
+def construct_forecast(df_weather: pd.DataFrame):
+    result = dict()
+    forecast_days = max(
+        (int(col.split('previous_day')[-1]) for col in df_weather.columns if 'previous_day' in col),
+        default=0
+    )
+    for day in range(1, forecast_days+1):
+        df_forecast_day_x = pd.DataFrame({
+            'temperature_2m': df_weather[f'temperature_2m_previous_day{day}'],
+            'relative_humidity_2m': df_weather[f'relative_humidity_2m_previous_day{day}'],
+            'precipitation': df_weather[f'precipitation_previous_day{day}'],
+        })
+        df_forecast_day_x['vapour_pressure_deficit'] = df_forecast_day_x.apply(
+            lambda row: compute_vpd(row['temperature_2m'], row['relative_humidity_2m']), axis=1)
+        result[day] = df_forecast_day_x
+    return result
+
+
+def get_meteo(params: dict, verbose: bool = False) -> pd.DataFrame:
+    url = "https://previous-runs-api.open-meteo.com/v1/forecast"
+    params['end_date'] = (
+            datetime.strptime(params['end_date'], "%Y-%m-%d") +
+            timedelta(days=get_days_of_forecast(params))
+    ).strftime("%Y-%m-%d")
+    params['models'] = "jma_gsm"
 
     # Setup the Open-Meteo API client with cache and retry on error
     cache_session = requests_cache.CachedSession(".cache", expire_after=-1)
@@ -58,6 +108,9 @@ def get_meteo(params, forecast: bool = False, verbose: bool = False) -> pd.DataF
     hourly_dataframe.index = hourly_dataframe.index.tz_convert(
         response.Timezone().decode("utf-8")
     )
+    hourly_dataframe = compute_is_daylight(hourly_dataframe, response.Latitude(), response.Longitude(), response.Timezone().decode("utf-8"))
+    hourly_dataframe['vapour_pressure_deficit'] = hourly_dataframe.apply(
+        lambda row: compute_vpd(row['temperature_2m'], row['relative_humidity_2m']), axis=1)
 
     return hourly_dataframe
 
@@ -135,16 +188,15 @@ class WeatherDataLibrary:
         if key is None:
             key = construct_key(params["latitude"], params["longitude"], params["start_date"], params["end_date"])
 
-        weather_data = get_meteo(params, forecast=False)
-        forecast_data = get_meteo(params, forecast=True)
-
-        self.data[key] = {"weather": weather_data, "forecast": forecast_data}
+        weather_data = get_meteo(params)
+        weather_forecast = construct_forecast(weather_data)
+        self.data[key] = {"weather": weather_data, "weather_forecast": weather_forecast}
 
     def get_weather(self, key):
         return self.data.get(key, {}).get("weather", None)
 
-    def get_forecast(self, key):
-        return self.data.get(key, {}).get("forecast", None)
+    def get_weather_forecast(self, key):
+        return self.data.get(key, {}).get("weather_forecast", None)
 
 
 def is_rain_event(

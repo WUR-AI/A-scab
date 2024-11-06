@@ -6,7 +6,7 @@ from typing import Union
 from ascab.model.infection import InfectionRate, get_pat_threshold
 
 
-def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variables: list[str] = None):
+def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variables: list[str] = None, save_path: str = None):
     results = {"": results} if not isinstance(results, dict) else results
     alpha = 1.0 if len(results) == 1 else 0.5
 
@@ -72,6 +72,8 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variab
         pd.concat([df["Date"] for df in results.values()])
     ).dt.year.unique()
     plt.xlabel(f'{all_years}')
+    if save_path:
+        plt.savefig(save_path, format='png', dpi=300, bbox_inches='tight')
     plt.show()
 
 

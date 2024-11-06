@@ -7,7 +7,7 @@ from typing import List
 from collections import defaultdict
 
 from ascab.utils.weather import (get_meteo, summarize_weather, WeatherSummary, get_default_days_of_forecast,
-                                 WeatherDataLibrary, get_first_full_day, get_last_full_day)
+                                 WeatherDataLibrary, get_first_full_day, get_last_full_day, construct_forecast)
 from ascab.utils.plot import plot_results, plot_infection
 from ascab.model.maturation import PseudothecialDevelopment, AscosporeMaturation, LAI, Phenology, get_default_budbreak_date
 from ascab.model.infection import InfectionRate, Pesticide, get_values_last_infections, get_discharge_date, will_infect, get_risk, get_pat_threshold
@@ -21,7 +21,18 @@ def get_default_dates():
     return "2024-01-01", "2024-10-01"
 
 
-def get_weather_params(location: tuple[float, float] = None, dates: tuple[str, str] = None):
+def generate_hourly_list(days_of_forecast: int =get_default_days_of_forecast()) -> list:
+    base_metrics = ["temperature_2m", "relative_humidity_2m", "precipitation"]
+    hourly = []
+    for metric in base_metrics:
+        hourly.append(metric)
+        for day in range(1, days_of_forecast + 1):
+            hourly.append(f"{metric}_previous_day{day}")
+    return hourly
+
+
+def get_weather_params(location: tuple[float, float] = None, dates: tuple[str, str] = None,
+                       days_of_forecast: int = get_default_days_of_forecast()):
     if location is None:
         location = get_default_location()
     if dates is None:
@@ -33,23 +44,20 @@ def get_weather_params(location: tuple[float, float] = None, dates: tuple[str, s
         "longitude": longitude,
         "start_date": start_date,
         "end_date": end_date,
-        "hourly": [
-            "temperature_2m",
-            "relative_humidity_2m",
-            "precipitation",
-            "vapour_pressure_deficit",
-            "is_day",
-        ],
+        "hourly": generate_hourly_list(days_of_forecast),
         "timezone": "auto",
+        "models": "jma_gsm"
     }
     return params
 
 
-def get_weather_library(locations: List[tuple[float, float]], dates: List[tuple[str, str]]):
+def get_weather_library(locations: List[tuple[float, float]], dates: List[tuple[str, str]],
+                        days_of_forecast: int = get_default_days_of_forecast()):
     result = WeatherDataLibrary()
     for location in locations:
         for date_range in dates:
-            result.collect_weather(params=get_weather_params(location=location, dates=date_range))
+            result.collect_weather(
+                params=get_weather_params(location=location, dates=date_range, days_of_forecast=days_of_forecast))
     return result
 
 
@@ -75,7 +83,8 @@ class AScabEnv(gym.Env):
     """
 
     def __init__(self, location: tuple[float, float] = get_default_location(), dates: tuple[str, str] = get_default_dates(),
-                 weather: pd.DataFrame = None, weather_forecast: pd.DataFrame = None,
+                 weather: pd.DataFrame = None, weather_forecast: dict[int, pd.DataFrame] = None,
+                 days_of_forecast: int = get_default_days_of_forecast(),
                  biofix_date: str = None, budbreak_date: str = get_default_budbreak_date(),
                  seed: int = 42, verbose: bool = False):
         super().reset(seed=seed)
@@ -83,9 +92,8 @@ class AScabEnv(gym.Env):
         self.seed = seed
         self.verbose = verbose
         self.dates = tuple(datetime.strptime(date, "%Y-%m-%d").date() for date in dates)
-        self.weather = weather if weather is not None else get_meteo(get_weather_params(location, dates), forecast=False, verbose=False)
-        self.weather_forecast = weather_forecast if weather_forecast is not None else get_meteo(params=get_weather_params(location, dates), forecast=True, verbose=False)
-
+        self.weather = weather if weather is not None else get_meteo(get_weather_params(location, dates, days_of_forecast), verbose=False)
+        self.weather_forecast = weather_forecast if weather_forecast is not None else construct_forecast(self.weather)
         self._reset_internal(biofix_date=biofix_date, budbreak_date=budbreak_date)
 
         self.observation_space_disease = gym.spaces.Dict({
@@ -115,6 +123,9 @@ class AScabEnv(gym.Env):
         self.action_space = gym.spaces.Box(0, 1.0, shape=(), dtype=np.float32)
         self.render_mode = 'human'
 
+    def _get_days_of_forecast(self):
+        return len(self.weather_forecast)
+
     def _reset_internal(self, biofix_date: str, budbreak_date: str):
         pseudothecia = PseudothecialDevelopment()
         ascospore = AscosporeMaturation(pseudothecia, biofix_date=biofix_date)
@@ -133,7 +144,7 @@ class AScabEnv(gym.Env):
                      **{
                          f"Forecast_day{day}_{name}": []
                          for name in WeatherSummary.get_variable_names()
-                         for day in range(1, get_default_days_of_forecast()+1)
+                         for day in range(1, self._get_days_of_forecast()+1)
                      },
                      "Action": [], "Reward": []}
 
@@ -148,8 +159,8 @@ class AScabEnv(gym.Env):
         weather_observation = df_summary_weather[varnames].to_dict(orient="list")
         [self.info[key].extend(value) for key, value in weather_observation.items() if key != "Date"]
 
-        for day in range(1, get_default_days_of_forecast()+1):
-            df_summary_weather_forecast = summarize_weather([self.date + timedelta(days=day)], self.weather_forecast)
+        for day in range(1, self._get_days_of_forecast()+1):
+            df_summary_weather_forecast = summarize_weather([self.date + timedelta(days=day)], self.weather_forecast[day])
             varnames = [col for col in self.info.keys() if col in df_summary_weather_forecast.columns]
             weather_forecast = df_summary_weather_forecast[varnames].to_dict(orient="list")
             [self.info[f'Forecast_day{day}_{key}'].extend(value) for key, value in weather_forecast.items() if key != "Date"]
@@ -258,7 +269,7 @@ class MultipleWeatherASCabEnv(AScabEnv):
             keys = list(self.weather_data_library.data.keys())
             key = self.np_random.choice(keys)
         self.weather = self.weather_data_library.get_weather(key)
-        self.weather_forecast = self.weather_data_library.get_forecast(key)
+        self.weather_forecast = self.weather_data_library.get_weather_forecast(key)
         start_date = get_first_full_day(self.weather)
         end_date = get_last_full_day(self.weather)
         self.dates = start_date, end_date

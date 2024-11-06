@@ -514,7 +514,7 @@ class InfectionRate:
         return result
 
     def terminated(self):
-        return bool(self.hours) and self.hours[-1] > (self.infection_duration)
+        return bool(self.hours) and self.hours[-1] > (self.infection_duration) and self.s3_sigmoid[-1] > 0.0
 
 
 def get_values_last_infections(infections: list[InfectionRate]) -> (pd.Timestamp, float):

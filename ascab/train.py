@@ -3,12 +3,13 @@ import os
 import abc
 import pandas as pd
 from typing import Optional
-from scipy.optimize import minimize, basinhopping, Bounds
+from scipy.optimize import basinhopping, Bounds
 import numpy as np
 from gymnasium.wrappers import FlattenObservation, FilterObservation
 
 from ascab.utils.plot import plot_results
-from ascab.env.env import AScabEnv, MultipleWeatherASCabEnv, ActionConstrainer, get_weather_library
+from ascab.utils.generic import get_dates
+from ascab.env.env import AScabEnv, MultipleWeatherASCabEnv, ActionConstrainer, get_weather_library, get_default_start_of_season, get_default_end_of_season
 
 
 try:
@@ -245,6 +246,7 @@ class RLAgent(BaseAgent):
                 eval_freq=1500,
                 deterministic=True,
                 render=False,
+                best_model_save_path=os.path.dirname(self.path_model) if self.path_model else None
             )
             self.model = PPO("MlpPolicy", self.ascab_train, verbose=1, seed=42, tensorboard_log=self.path_log)
             self.model.learn(total_timesteps=self.n_steps, callback=[eval_callback])
@@ -257,7 +259,7 @@ class RLAgent(BaseAgent):
 
 if __name__ == "__main__":
     ascab_env = AScabEnv(
-        location=(42.1620, 3.0924), dates=("2022-02-01", "2022-09-30"),
+        location=(42.1620, 3.0924), dates=get_dates(years=[2022], start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season()),
         biofix_date="March 10", budbreak_date="March 10")
     ascab_env = ActionConstrainer(ascab_env)
 
@@ -284,19 +286,20 @@ if __name__ == "__main__":
 
     if PPO is not None:
         print("rl agent")
-        save_path = os.path.join(os.getcwd(), "rl_agent_2022_long")
+        save_path = os.path.join(os.getcwd(), "rl_agent_many_years_pesticide_discharge")
         log_path = os.path.join(os.getcwd(), "log")
         ascab_train = MultipleWeatherASCabEnv(
             weather_data_library=get_weather_library(
-                locations=[(42.1620, 3.0924), (42.1620, 3.0), (42.5, 2.5), (41.5, 3.0924), (42.5, 3.0924)], dates=[("2023-02-01", "2023-09-30"), ("2024-02-01", "2024-09-30")]
-            ),
+                locations=[(42.1620, 3.0924), (42.1620, 3.0), (42.5, 2.5), (41.5, 3.0924), (42.5, 3.0924)],
+                dates=get_dates([year for year in range(2016, 2025) if year != 2022], start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season())),
             biofix_date="March 10",
             budbreak_date="March 10",
         )
-        ascab_rl = RLAgent(ascab_train=ascab_env, ascab_test=ascab_env, observation_filter=["weather", "tree", "disease"], n_steps=500000,
+        ascab_rl = RLAgent(ascab_train=ascab_train, ascab_test=ascab_env, observation_filter=["weather", "tree", "disease"], n_steps=1000000,
                            render=False, path_model=save_path, path_log=log_path)
         ascab_rl_results = ascab_rl.run()
-        plot_results({"zero": zero_results, "filler": filling_results, "umbrella": umbrella_results, "rl": ascab_rl_results, "ceres": ceres_results},
-                     variables=["Precipitation", "LeafWetness", "AscosporeMaturation", "Discharge", "Infections", "Pesticide", "Risk", "Action"])
+        plot_results({"zero": zero_results, "umbrella": umbrella_results, "rl": ascab_rl_results, "ceres": ceres_results},
+                     save_path=os.path.join(os.getcwd(), "ceres_2022.png"), variables=["Precipitation", "LeafWetness", "AscosporeMaturation", "Discharge", "Pesticide", "Risk", "Action"])
     else:
         print("Stable-baselines3 is not installed. Skipping RL agent.")
+

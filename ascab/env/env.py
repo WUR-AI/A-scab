@@ -9,6 +9,7 @@ from collections import defaultdict
 from ascab.utils.weather import (get_meteo, summarize_weather, WeatherSummary, get_default_days_of_forecast,
                                  WeatherDataLibrary, get_first_full_day, get_last_full_day, construct_forecast)
 from ascab.utils.plot import plot_results, plot_infection
+from ascab.utils.generic import get_dates
 from ascab.model.maturation import PseudothecialDevelopment, AscosporeMaturation, LAI, Phenology, get_default_budbreak_date
 from ascab.model.infection import InfectionRate, Pesticide, get_values_last_infections, get_discharge_date, will_infect, get_risk, get_pat_threshold
 
@@ -17,11 +18,19 @@ def get_default_location():
     return 51.98680, 5.66359
 
 
+def get_default_start_of_season():
+    return "02-01"
+
+
+def get_default_end_of_season():
+    return "10-31"
+
+
 def get_default_dates():
-    return "2024-01-01", "2024-10-01"
+    return get_dates(years=[2024], start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season())
 
 
-def generate_hourly_list(days_of_forecast: int =get_default_days_of_forecast()) -> list:
+def generate_hourly_list(days_of_forecast: int = get_default_days_of_forecast()) -> list:
     base_metrics = ["temperature_2m", "relative_humidity_2m", "precipitation"]
     hourly = []
     for metric in base_metrics:
@@ -61,6 +70,14 @@ def get_weather_library(locations: List[tuple[float, float]], dates: List[tuple[
     return result
 
 
+def get_default_observations() -> dict[str, set]:
+    return {
+        'disease': {'PseudothecialDevelopment', 'AscosporeMaturation', 'Ascospores', 'Discharge', 'Infections', 'Risk'},
+        'tree': {'LAI', 'Phenology', 'Pesticide'},
+        'weather': set(WeatherSummary.get_variable_names().append("Forecast"))
+    }
+
+
 class AScabEnv(gym.Env):
     """
     Gymnasium Environment for Apple Scab Model (A-scab)
@@ -86,6 +103,7 @@ class AScabEnv(gym.Env):
                  weather: pd.DataFrame = None, weather_forecast: dict[int, pd.DataFrame] = None,
                  days_of_forecast: int = get_default_days_of_forecast(),
                  biofix_date: str = None, budbreak_date: str = get_default_budbreak_date(),
+                 observation_filter: dict[str, set] = get_default_observations(),
                  seed: int = 42, verbose: bool = False):
         super().reset(seed=seed)
 
@@ -99,18 +117,19 @@ class AScabEnv(gym.Env):
         self.observation_space_disease = gym.spaces.Dict({
             name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
             for name, _ in self.info.items()
-            if name in {"AscosporeMaturation", "PseudothecialDevelopment", "Ascospores", "Infections", "Risk"}
+            if name in observation_filter['disease']
         })
         self.observation_space_tree = gym.spaces.Dict({
             name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
-            for name, _ in self.info.items() if name in {"LAI", "Phenology"}
+            for name, _ in self.info.items() if name in observation_filter['tree']
         })
         self.observation_space_weather_summary = gym.spaces.Dict(
             {
                 name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
                 for name, _ in self.info.items()
-                if name in WeatherSummary.get_variable_names()
-                or name.startswith("Forecast_") and name.split('_', 2)[-1] in WeatherSummary.get_variable_names()
+                if name in observation_filter['weather']
+                or "forcast" in observation_filter['weather'] and name.startswith("Forecast_")
+                   and name.split('_', 2)[-1] in observation_filter['weather']
             }
         )
         self.observation_space = gym.spaces.Dict(
@@ -271,7 +290,7 @@ class MultipleWeatherASCabEnv(AScabEnv):
         self.weather = self.weather_data_library.get_weather(key)
         self.weather_forecast = self.weather_data_library.get_weather_forecast(key)
         start_date = get_first_full_day(self.weather)
-        end_date = get_last_full_day(self.weather)
+        end_date = get_last_full_day(self.weather) + timedelta(-self._get_days_of_forecast())
         self.dates = start_date, end_date
 
     def reset(self, seed=None, options=None):

@@ -57,3 +57,25 @@ def parse_date(input_date: Optional[Union[str, int]]) -> Optional[int]:
         return (
             datetime.datetime.strptime(input_date, "%B %d").timetuple().tm_yday
         )  # If it's a date string (e.g., "March 10")
+
+
+def get_season_dates(start_of_season: str, end_of_season: str, year: int):
+    start_date = datetime.datetime.strptime(f"{year}-{start_of_season}", "%Y-%m-%d")
+    end_date = datetime.datetime.strptime(f"{year}-{end_of_season}", "%Y-%m-%d")
+    return start_date, end_date
+
+
+def convert_dates_to_strings(start_date, end_date):
+    return start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
+
+
+def get_dates(years, start_of_season, end_of_season, return_as_strings=True)\
+        -> Union[tuple[Union[str, datetime], Union[str, datetime]], list[tuple[Union[str, datetime], Union[str, datetime]]]]:
+    result = []
+    for year in years:
+        start, end = get_season_dates(start_of_season, end_of_season, year)
+        if return_as_strings:
+            start, end = convert_dates_to_strings(start, end)
+        result.append((start, end))
+
+    return result[0] if len(result) == 1 else result

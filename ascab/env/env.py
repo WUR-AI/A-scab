@@ -70,12 +70,12 @@ def get_weather_library(locations: List[tuple[float, float]], dates: List[tuple[
     return result
 
 
-def get_default_observations() -> dict[str, set]:
-    return {
-        'disease': {'PseudothecialDevelopment', 'AscosporeMaturation', 'Ascospores', 'Discharge', 'Infections', 'Risk'},
-        'tree': {'LAI', 'Phenology', 'Pesticide'},
-        'weather': set(WeatherSummary.get_variable_names().append("Forecast"))
-    }
+def get_default_observations() -> list[str]:
+    result = ['PseudothecialDevelopment', 'AscosporeMaturation', 'Ascospores', 'Discharge', 'Infections', 'Risk',
+              'LAI', 'Phenology', 'Pesticide']
+    result.extend(WeatherSummary.get_variable_names())
+    result.append("Forecast")
+    return result
 
 
 class AScabEnv(gym.Env):
@@ -103,7 +103,6 @@ class AScabEnv(gym.Env):
                  weather: pd.DataFrame = None, weather_forecast: dict[int, pd.DataFrame] = None,
                  days_of_forecast: int = get_default_days_of_forecast(),
                  biofix_date: str = None, budbreak_date: str = get_default_budbreak_date(),
-                 observation_filter: dict[str, set] = get_default_observations(),
                  seed: int = 42, verbose: bool = False):
         super().reset(seed=seed)
 
@@ -114,31 +113,14 @@ class AScabEnv(gym.Env):
         self.weather_forecast = weather_forecast if weather_forecast is not None else construct_forecast(self.weather)
         self._reset_internal(biofix_date=biofix_date, budbreak_date=budbreak_date)
 
-        self.observation_space_disease = gym.spaces.Dict({
+        observation_filter = get_default_observations()
+        self.observation_space = gym.spaces.Dict({
             name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
             for name, _ in self.info.items()
-            if name in observation_filter['disease']
+            if name in observation_filter
+            or "Forecast" in observation_filter
+               and name.startswith("Forecast_") and name.split('_', 2)[-1] in observation_filter
         })
-        self.observation_space_tree = gym.spaces.Dict({
-            name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
-            for name, _ in self.info.items() if name in observation_filter['tree']
-        })
-        self.observation_space_weather_summary = gym.spaces.Dict(
-            {
-                name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
-                for name, _ in self.info.items()
-                if name in observation_filter['weather']
-                or "forcast" in observation_filter['weather'] and name.startswith("Forecast_")
-                   and name.split('_', 2)[-1] in observation_filter['weather']
-            }
-        )
-        self.observation_space = gym.spaces.Dict(
-            {
-                "disease": self.observation_space_disease,
-                "tree": self.observation_space_tree,
-                "weather": self.observation_space_weather_summary,
-            }
-        )
         self.action_space = gym.spaces.Box(0, 1.0, shape=(), dtype=np.float32)
         self.render_mode = 'human'
 
@@ -227,20 +209,9 @@ class AScabEnv(gym.Env):
         return o, r, self._terminated(), False, i
         
     def _get_observation(self) -> dict:
-        def generate_observation(info, observation_space_keys):
-            o = {name: np.array(value[-1], dtype=np.float32) if value else np.array(0.0, dtype=np.float32)
-                 for name, value in info.items() if name in observation_space_keys}
-            return o
-
-        disease_observation = generate_observation(self.info, self.observation_space_disease.keys())
-        tree_observation = generate_observation(self.info, self.observation_space_tree.keys())
-        weather_observation = generate_observation(self.info, self.observation_space_weather_summary.keys())
-        result = {
-            "disease": disease_observation,
-            "tree": tree_observation,
-            "weather": weather_observation,
-        }
-        return result
+        o = {name: np.array(value[-1], dtype=np.float32) if value else np.array(0.0, dtype=np.float32)
+             for name, value in self.info.items() if name in set(self.observation_space.keys())}
+        return o
 
     def get_info(self, to_dataframe: bool = False):
         result = self.info

@@ -20,10 +20,6 @@ except ImportError:
     PPO = None
 
 
-def get_default_observation_filter():
-    return ["weather", "tree"]
-
-
 class BaseAgent(abc.ABC):
     def __init__(self, ascab: Optional[AScabEnv] = None, render: bool = True):
         self.ascab = ascab or AScabEnv()
@@ -210,7 +206,7 @@ class RLAgent(BaseAgent):
         ascab_train: Optional[AScabEnv] = None,
         ascab_test: Optional[AScabEnv] = None,
         n_steps: int = 5000,
-        observation_filter: Optional[list] = get_default_observation_filter(),
+        observation_filter: Optional[list] = None,
         render: bool = True,
         path_model: Optional[str] = None,
         path_log: Optional[str] = None

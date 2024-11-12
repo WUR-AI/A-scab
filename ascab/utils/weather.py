@@ -229,7 +229,7 @@ def get_last_full_day(df_weather: pd.DataFrame):
 def compute_duration_and_temperature_wet_period(df_weather_infection: pd.DataFrame):
     # An infection event is composed by two wet periods interrupted by a dry period of at least 4 h;
     # shorter interruptions of the wet period are not considered as interruptions.
-    # For instance, the following situation: 8 h wet +2 h dry +6 h wet +8 h dry +12 h wet,
+    # For instance, the following situation: 8h wet + 2h dry + 6h wet + 8h dry + 12h wet,
     # represents a potential infection period with tinf = 26 h
     # and a Tinf calculated by averaging T during wetness, disregarding interruptions.
     # p. 304 Rossi et al.

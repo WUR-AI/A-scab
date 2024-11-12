@@ -11,7 +11,7 @@ from ascab.utils.weather import (get_meteo, summarize_weather, WeatherSummary, g
 from ascab.utils.plot import plot_results, plot_infection
 from ascab.utils.generic import get_dates
 from ascab.model.maturation import PseudothecialDevelopment, AscosporeMaturation, LAI, Phenology, get_default_budbreak_date
-from ascab.model.infection import InfectionRate, Pesticide, get_values_last_infections, get_discharge_date, will_infect, get_risk, get_pat_threshold
+from ascab.model.infection import InfectionRate, Discharge, Pesticide, get_values_last_discharge, get_discharge_date, will_infect, get_risk, get_pat_threshold
 
 
 def get_default_location():
@@ -136,6 +136,7 @@ class AScabEnv(gym.Env):
 
         self.models = {type(model).__name__: model for model in [pseudothecia, ascospore, lai, phenology]}
         self.infections = []
+        self.discharges = []
 
         self.date = self.dates[0]
         self.info = {"Date": [],
@@ -178,7 +179,7 @@ class AScabEnv(gym.Env):
 
         lai_value = self.models['LAI'].value
         ascospore_value = self.models['AscosporeMaturation'].value
-        time_previous, pat_previous = get_values_last_infections(self.infections)
+        time_previous, pat_previous = get_values_last_discharge(self.discharges)
         discharge_date = get_discharge_date(df_weather_day, pat_previous, ascospore_value, time_previous)
 
         self.info['Discharge'].append((discharge_date is not None) * (ascospore_value - pat_previous))
@@ -187,14 +188,16 @@ class AScabEnv(gym.Env):
         self.info["Pesticide"].append(self.pesticide.effective_coverage[-1])
 
         if discharge_date is not None:
-            end_day = self.date + timedelta(days=5)
+            self.discharges.append(Discharge(discharge_date, ascospore_value))
+            end_day = self.date + timedelta(days=10)
             df_weather_infection = self.weather.loc[self.date.strftime("%Y-%m-%d"):end_day.strftime("%Y-%m-%d")]
             infect, infection_duration, infection_temperature = will_infect(df_weather_infection)
             if infect:
                 self.infections.append(InfectionRate(discharge_date, ascospore_value, pat_previous, lai_value,
                                                      infection_duration, infection_temperature))
             else:
-                if self.verbose: print(f'No infection {infection_duration} {infection_temperature}')
+                if self.verbose: print(f'No infection {self.date} {infection_duration} {infection_temperature}')
+
         for infection in self.infections:
             infection.progress(df_weather_day, self.pesticide.effective_coverage)
         self.info["Infections"].append(len(self.infections))

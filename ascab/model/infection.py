@@ -376,6 +376,13 @@ def will_infect(df_weather_infection: pd.DataFrame) -> (bool, int, float):
     return result, infection_duration, infection_temperature
 
 
+class Discharge:
+    def __init__(self, discharge_date: pd.Timestamp, ascospore_value: float):
+        super(Discharge, self).__init__()
+        self.discharge_date = discharge_date
+        self.pat_start = ascospore_value
+
+
 class InfectionRate:
     """
     Implementation of Infection model from Rossi et al., figure 2
@@ -517,21 +524,21 @@ class InfectionRate:
         return bool(self.hours) and self.hours[-1] > (self.infection_duration) and self.s3_sigmoid[-1] > 0.0
 
 
-def get_values_last_infections(infections: list[InfectionRate]) -> (pd.Timestamp, float):
+def get_values_last_discharge(discharges: list[Discharge]) -> (pd.Timestamp, float):
     """
-    Retrieves the discharge date and pat value from the last infection event.
+    Retrieves the discharge date and pat value from the last discharge event.
 
     Parameters:
-    - infections (list[InfectionRate]): A list of InfectionRate objects.
+    - discharges (list[Discharge]): A list of Discharge objects.
 
     Returns:
-    - pd.Timestamp: The discharge date of the last infection, or January 1, 1900, if the list is empty.
-    - float: Pat value (proportion of ascospores that can become airborne) from last infection, or 0 if the list is empty.
+    - pd.Timestamp: The discharge date of the last discharge, or January 1, 1900, if the list is empty.
+    - float: Pat value (proportion of ascospores that can become airborne) from last discharge, or 0 if the list is empty.
     """
 
-    if infections:
-        time_previous = infections[-1].discharge_date
-        pat_previous = infections[-1].pat_start
+    if discharges:
+        time_previous = discharges[-1].discharge_date
+        pat_previous = discharges[-1].pat_start
     else:
         time_previous = datetime.datetime(1900, 1, 1, 0, 0, 0, tzinfo=pytz.utc)
         pat_previous = 0

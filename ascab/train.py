@@ -200,6 +200,19 @@ class UmbrellaAgent(BaseAgent):
         return 0.0
 
 
+class EvalLogger(BaseCallback):
+    def __init__(self):
+        super(EvalLogger, self).__init__()
+    parent: EvalCallback
+
+    def _on_step(self) -> bool:
+        info = self.parent.eval_env.buf_infos[0]
+        sum_action = np.sum(info['Action'])
+        self.logger.record("eval/sum_action", float(sum_action))
+        self.logger.dump(self.parent.num_timesteps)
+        return True
+
+
 class RLAgent(BaseAgent):
     def __init__(
         self,
@@ -237,12 +250,14 @@ class RLAgent(BaseAgent):
             print(f'Load model from disk: {self.path_model}')
             self.model = PPO.load(env=self.ascab_train, path=self.path_model, print_system_info=False)
         else:
+            eval_logger = EvalLogger()
             eval_callback = EvalCallback(
                 eval_env=Monitor(self.ascab),
                 eval_freq=1500,
                 deterministic=True,
                 render=False,
-                best_model_save_path=os.path.dirname(self.path_model) if self.path_model else None
+                best_model_save_path=os.path.dirname(self.path_model) if self.path_model else None,
+                callback_after_eval=eval_logger
             )
             self.model = PPO("MlpPolicy", self.ascab_train, verbose=1, seed=42, tensorboard_log=self.path_log)
             self.model.learn(total_timesteps=self.n_steps, callback=[eval_callback])

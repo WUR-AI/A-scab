@@ -445,6 +445,7 @@ class InfectionRate:
         self.mor1 = []
         self.mor2 = []
         self.mor3 = []
+        self.pesticide_levels = []
 
     def progress(self, df_weather_day, pesticide_levels: np.ndarray[1, np.float32]):
         temperatures = df_weather_day["temperature_2m"].to_numpy()
@@ -496,6 +497,7 @@ class InfectionRate:
             total_survival = total_population - np.cumsum(s1_not_deposited)
             total_survival = total_survival * np.cumprod(1 - total_mortality)
             self.total_population.extend(total_survival)
+            self.pesticide_levels.extend(pesticide_levels)
 
             self.mor0.extend(s1_not_deposited)
             self.mor1.extend(dm1 * s1)

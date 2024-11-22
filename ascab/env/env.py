@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import numpy as np
 import random
-from typing import List
+from typing import List, Union
 from collections import defaultdict
 
 from ascab.utils.weather import (get_meteo, summarize_weather, WeatherSummary, get_default_days_of_forecast,
@@ -60,13 +60,22 @@ def get_weather_params(location: tuple[float, float] = None, dates: tuple[str, s
     return params
 
 
-def get_weather_library(locations: List[tuple[float, float]], dates: List[tuple[str, str]],
-                        days_of_forecast: int = get_default_days_of_forecast()):
+def get_weather_library(
+    locations: List[tuple[float, float]],
+    dates: Union[List[tuple[str, str]], tuple[str, str]],
+    days_of_forecast: int = get_default_days_of_forecast(),
+):
     result = WeatherDataLibrary()
+
+    # Ensure dates is always a list of tuples for uniform processing
+    if isinstance(dates, tuple):
+        dates = [dates]
+
     for location in locations:
         for date_range in dates:
             result.collect_weather(
-                params=get_weather_params(location=location, dates=date_range, days_of_forecast=days_of_forecast))
+                params=get_weather_params(location=location, dates=date_range, days_of_forecast=days_of_forecast)
+            )
     return result
 
 
@@ -249,29 +258,54 @@ class AScabEnv(gym.Env):
 
 
 class MultipleWeatherASCabEnv(AScabEnv):
-    def __init__(self, weather_data_library: WeatherDataLibrary, *args, **kwargs):
+    def __init__(self, weather_data_library: WeatherDataLibrary, mode: str = "random", *args, **kwargs):
+        self.mode = mode
         self.weather_data_library = weather_data_library
-        self.set_weather()
+        self.weather_keys = list(self.weather_data_library.data.keys())
+        self.processed_keys = set()  # Track completed keys
+        self.current_weather_key = self.weather_keys[0]  # Initialize the current weather key
         self.histogram = defaultdict(int)
+        self.set_weather(self.current_weather_key)
         super().__init__(dates=(self.dates[0].strftime("%Y-%m-%d"), self.dates[1].strftime("%Y-%m-%d")),
                          weather=self.weather, weather_forecast=self.weather_forecast,
                          *args, **kwargs)
 
-    def set_weather(self, key=None):
-        if key is None:
-            keys = list(self.weather_data_library.data.keys())
-            key = self.np_random.choice(keys)
-        self.weather = self.weather_data_library.get_weather(key)
-        self.weather_forecast = self.weather_data_library.get_weather_forecast(key)
+    def set_weather(self, weather_key):
+        self.weather = self.weather_data_library.get_weather(weather_key)
+        self.weather_forecast = self.weather_data_library.get_weather_forecast(weather_key)
         start_date = get_first_full_day(self.weather)
         end_date = get_last_full_day(self.weather) + timedelta(-self._get_days_of_forecast())
         self.dates = start_date, end_date
+        self.current_weather_key = weather_key  # Track the current weather key
+
+    def get_next_weather_key(self):
+        if self.mode == "random":
+            return self.np_random.choice(list(self.weather_keys))
+        elif self.mode == "sequential":
+            # Select the next key based on the mode
+            remaining_keys = set(self.weather_keys) - self.processed_keys
+            return sorted(remaining_keys)[0]
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
 
     def reset(self, seed=None, options=None):
-        random_key = self.np_random.choice(list(self.weather_data_library.data.keys()))
-        self.set_weather(random_key)
-        self.histogram[random_key] = self.histogram[random_key] +1
-        return super().reset()
+        if len(self.processed_keys) >= len(self.weather_keys):
+            self.reset_processed_keys()
+        # Get the next weather key
+        weather_key = self.get_next_weather_key()
+        self.set_weather(weather_key)
+        return super().reset(seed=seed, options=options)
+
+    def step(self, action):
+        obs, reward, done, truncated, info = super().step(action)
+        if done or truncated:
+            self.processed_keys.add(self.current_weather_key)  # Mark this weather as processed
+            self.histogram[self.current_weather_key] += 1
+        return obs, reward, done, truncated, info
+
+    def reset_processed_keys(self):
+        """Reset the processed keys dictionary to allow reprocessing."""
+        self.processed_keys.clear()
 
 
 class ActionConstrainer(gym.ActionWrapper):

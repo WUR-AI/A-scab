@@ -26,7 +26,7 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variab
     variables = [var for var in variables if var != 'Date']
 
     num_variables = len(variables)
-    fig, axes = plt.subplots(num_variables, 1, figsize=(7, 3 * num_variables), sharex=True)
+    fig, axes = plt.subplots(num_variables, 1, figsize=(10, num_variables), sharex=True)
     for index_results, (df_key, df) in enumerate(results.items()):
         if "Reward" in df.columns:
             reward = df["Reward"].sum()
@@ -61,8 +61,7 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variab
                     if len(exceeding_indices) > 0:
                         first_pass_index = exceeding_indices[0]
                         x_coordinate = df.loc[first_pass_index, 'Date']  # Get the corresponding date value
-                        ax.axvline(x=x_coordinate, color='red', linestyle='--', label=f'Threshold ({threshold})')
-
+                        ax.axvline(x=x_coordinate, color='red', linestyle='--')
 
     ax = axes[-1] if num_variables > 1 else axes
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
@@ -73,7 +72,8 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variab
     ).dt.year.unique()
     plt.xlabel(f'{all_years}')
     if save_path:
-        plt.savefig(save_path, format='png', dpi=300, bbox_inches='tight')
+        print(f'save {save_path}')
+        plt.savefig(save_path, format='png', dpi=600, bbox_inches='tight')
     plt.show()
 
 
@@ -88,6 +88,7 @@ def plot_infection(infection: InfectionRate):
     ax1.plot(infection.hours, infection.s2, label='s2', linestyle='solid', color='purple')
     ax1.plot(infection.hours, infection.s3, label='s3', linestyle='solid', color='green')
     ax1.plot(infection.hours, infection.total_population, label='population', linestyle='solid', color='yellow')
+    ax1.plot(infection.hours, infection.pesticide_levels, label='pesticide', linestyle='solid', color='brown')
 
     total = np.sum([infection.s1, infection.s2, infection.s3], axis=0)
     ax1.plot(infection.hours, total, label='sum_s1_s2_s3', linestyle='solid', color='black')

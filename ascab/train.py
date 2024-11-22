@@ -2,7 +2,7 @@ import datetime
 import os
 import abc
 import pandas as pd
-from typing import Optional
+from typing import Optional, Dict, Any
 from scipy.optimize import basinhopping, Bounds
 import numpy as np
 from gymnasium.wrappers import FlattenObservation, FilterObservation
@@ -26,19 +26,23 @@ class BaseAgent(abc.ABC):
         self.render = render
 
     def run(self) -> pd.DataFrame:
-        observation, _ = self.ascab.reset()
-        total_reward = 0.0
-        terminated = False
-        while not terminated:
-            action = self.get_action(observation)
-            observation, reward, terminated, _, _ = self.ascab.step(action)
-            total_reward += reward
-
-        print(f"Reward: {total_reward}")
-        if self.render:
-            self.ascab.render()
-
-        return self.ascab.unwrapped.get_info(to_dataframe=True)
+        all_infos = []
+        all_rewards = []
+        n_eval_episodes = len(self.ascab.weather_keys) if hasattr(self.ascab, "weather_keys") else 1
+        for i in range(n_eval_episodes):
+            observation, _ = self.ascab.reset()
+            total_reward = 0.0
+            terminated = False
+            while not terminated:
+                action = self.get_action(observation)
+                observation, reward, terminated, _, _ = self.ascab.step(action)
+                total_reward += reward
+            all_rewards.append(total_reward)
+            print(f"Reward: {total_reward}")
+            all_infos.append(self.ascab.unwrapped.get_info(to_dataframe=True))
+            if self.render:
+                self.ascab.render()
+        return pd.concat(all_infos, ignore_index=True)
 
     @abc.abstractmethod
     def get_action(self, observation: Optional[dict] = None) -> float:
@@ -75,7 +79,6 @@ def objective(optimized_actions, ascab_env, unmasked_indices, action_length):
     # Run the agent to get cumulative reward
     df_results = agent.run()
     cumulative_reward = df_results["Reward"].sum()
-    print(f'{cumulative_reward}: {optimized_actions}')
 
     return -cumulative_reward
 
@@ -201,16 +204,31 @@ class UmbrellaAgent(BaseAgent):
 
 
 class EvalLogger(BaseCallback):
-    def __init__(self):
+    def __init__(self, tag: str = None):
         super(EvalLogger, self).__init__()
+        self.tag = tag
     parent: EvalCallback
 
     def _on_step(self) -> bool:
+        subdir = f"eval-{self.tag}" if self.tag is not None else "eval"
         info = self.parent.eval_env.buf_infos[0]
-        sum_action = np.sum(info['Action'])
-        self.logger.record("eval/sum_action", float(sum_action))
+        for cum_var in ["Action", "Reward"]:
+            self.logger.record(f"{subdir}/sum_{cum_var}", float(np.sum(info[cum_var])))
         self.logger.dump(self.parent.num_timesteps)
         return True
+
+
+class CustomEvalCallback(EvalCallback):
+    def __init__(self, *args, **kwargs):
+        super(CustomEvalCallback, self).__init__(*args, **kwargs)
+
+    def _log_success_callback(self, locals_: Dict[str, Any], globals_: Dict[str, Any]) -> None:
+        if locals_["done"]:
+            info = locals_["info"]
+            tag = info["Date"][0].year
+            for cum_var in ["Action", "Reward"]:
+                self.logger.record(f"eval/{tag}-sum_{cum_var}", float(np.sum(info[cum_var])))
+            print(f'{tag}: {np.sum(info["Reward"])}')
 
 
 class RLAgent(BaseAgent):
@@ -250,14 +268,13 @@ class RLAgent(BaseAgent):
             print(f'Load model from disk: {self.path_model}')
             self.model = PPO.load(env=self.ascab_train, path=self.path_model, print_system_info=False)
         else:
-            eval_logger = EvalLogger()
-            eval_callback = EvalCallback(
+            eval_callback = CustomEvalCallback(
                 eval_env=Monitor(self.ascab),
                 eval_freq=1500,
                 deterministic=True,
                 render=False,
+                n_eval_episodes=len(self.ascab.weather_keys) if hasattr(self.ascab, "weather_keys") else 1,
                 best_model_save_path=os.path.dirname(self.path_model) if self.path_model else None,
-                callback_after_eval=eval_logger
             )
             self.model = PPO("MlpPolicy", self.ascab_train, verbose=1, seed=42, tensorboard_log=self.path_log)
             self.model.learn(total_timesteps=self.n_steps, callback=[eval_callback])
@@ -269,45 +286,58 @@ class RLAgent(BaseAgent):
 
 
 if __name__ == "__main__":
-    ascab_env = AScabEnv(
-        location=(42.1620, 3.0924), dates=get_dates(years=[2022], start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season()),
-        biofix_date="March 10", budbreak_date="March 10")
-    ascab_env = ActionConstrainer(ascab_env)
+    ascab_env = MultipleWeatherASCabEnv(
+            weather_data_library=get_weather_library(
+                locations=[(42.1620, 3.0924)],
+                dates=get_dates([year for year in [2022]], start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season())),
+            biofix_date="March 10",
+            budbreak_date="March 10",
+            mode="sequential",
+        )
+    ascab_env_constrained = ActionConstrainer(ascab_env)
 
     print("zero agent")
-    zero_agent = ZeroAgent(ascab=ascab_env, render=False)  # -0.634
+    zero_agent = ZeroAgent(ascab=ascab_env_constrained, render=False)  # -0.634
     zero_results = zero_agent.run()
 
     print("filling agent")
-    fill_agent = FillAgent(ascab=ascab_env, pesticide_threshold=0.1, render=False)
+    fill_agent = FillAgent(ascab=ascab_env_constrained, pesticide_threshold=0.1, render=False)
     filling_results = fill_agent.run()
 
     print("schedule agent")
-    schedule_agent = ScheduleAgent(ascab=ascab_env, render=False)
+    schedule_agent = ScheduleAgent(ascab=ascab_env_constrained, render=False)
     schedule_results = schedule_agent.run()
 
     print("umbrella agent")
-    umbrella_agent = UmbrellaAgent(ascab=ascab_env, render=False)
+    umbrella_agent = UmbrellaAgent(ascab=ascab_env_constrained, render=False)
     umbrella_results = umbrella_agent.run()
 
-    print("ceres agent")
-    optimizer = CeresOptimizer(ascab_env, os.path.join(os.getcwd(), "ceres_2022.txt"))
+    optimizer = CeresOptimizer(ascab_env_constrained, os.path.join(os.getcwd(), "ceres_2022_new.txt"))
     optimizer.run_optimizer()
     ceres_results = optimizer.run_ceres_agent()
 
     if PPO is not None:
         print("rl agent")
-        save_path = os.path.join(os.getcwd(), "rl_agent_many_years_pesticide_discharge")
+        save_path = os.path.join(os.getcwd(), "rl_agent_train_odd")
         log_path = os.path.join(os.getcwd(), "log")
         ascab_train = MultipleWeatherASCabEnv(
             weather_data_library=get_weather_library(
                 locations=[(42.1620, 3.0924), (42.1620, 3.0), (42.5, 2.5), (41.5, 3.0924), (42.5, 3.0924)],
-                dates=get_dates([year for year in range(2016, 2025) if year != 2022], start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season())),
-            biofix_date="March 10",
-            budbreak_date="March 10",
+                dates=get_dates([year for year in range(2016, 2025) if year % 2 == 0], start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season())),
+            biofix_date="March 10", budbreak_date="March 10",
         )
-        ascab_rl = RLAgent(ascab_train=ascab_train, ascab_test=ascab_env, observation_filter=["weather", "tree", "disease"], n_steps=1000000,
+        ascab_test = MultipleWeatherASCabEnv(
+            weather_data_library=get_weather_library(
+                locations=[(42.1620, 3.0924)],
+                dates=get_dates([year for year in range(2016, 2025) if year % 2 != 0], start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season())),
+            biofix_date="March 10", budbreak_date="March 10", mode="sequential",
+        )
+
+        observation_filter = list(ascab_train.observation_space.keys())
+        ascab_rl = RLAgent(ascab_train=ascab_train, ascab_test=ascab_test, observation_filter=observation_filter, n_steps=1000000,
                            render=False, path_model=save_path, path_log=log_path)
+        print(ascab_train.histogram)
+        print(ascab_test.histogram)
         ascab_rl_results = ascab_rl.run()
         plot_results({"zero": zero_results, "umbrella": umbrella_results, "rl": ascab_rl_results, "ceres": ceres_results},
                      save_path=os.path.join(os.getcwd(), "ceres_2022.png"), variables=["Precipitation", "LeafWetness", "AscosporeMaturation", "Discharge", "Pesticide", "Risk", "Action"])

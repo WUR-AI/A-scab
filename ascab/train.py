@@ -26,9 +26,10 @@ class BaseAgent(abc.ABC):
         self.render = render
 
     def run(self) -> pd.DataFrame:
+
         all_infos = []
         all_rewards = []
-        n_eval_episodes = len(self.ascab.weather_keys) if hasattr(self.ascab, "weather_keys") else 1
+        n_eval_episodes = len(self.ascab.unwrapped.weather_keys) if hasattr(self.ascab.unwrapped, "weather_keys") else 1
         for i in range(n_eval_episodes):
             observation, _ = self.ascab.reset()
             total_reward = 0.0

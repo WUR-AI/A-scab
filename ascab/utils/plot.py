@@ -27,6 +27,9 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variab
 
     num_variables = len(variables)
     fig, axes = plt.subplots(num_variables, 1, figsize=(10, num_variables), sharex=True)
+    all_years = pd.to_datetime(
+        pd.concat([df["Date"] for df in results.values()])
+    ).dt.year.unique()
     for index_results, (df_key, df) in enumerate(results.items()):
         if "Reward" in df.columns:
             reward = df["Reward"].sum()
@@ -40,7 +43,7 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variab
             if index_results == 0:
                 ax.text(0.015, 0.85, variable, transform=ax.transAxes, verticalalignment="top",horizontalalignment="left",
                         bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round,pad=0.25'))
-
+            df['Date'] = df['Date'].apply(lambda d: d.replace(year=2000)) # put all years on top of each other
             ax.step(df['Date'], df[variable], label=f'{df_key} {reward_string}', where='post', alpha=alpha)
             if i == 0: ax.legend()
 
@@ -67,9 +70,7 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variab
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
     fig.autofmt_xdate(rotation=0)
     plt.setp(ax.get_xticklabels(), ha="center")
-    all_years = pd.to_datetime(
-        pd.concat([df["Date"] for df in results.values()])
-    ).dt.year.unique()
+
     plt.xlabel(f'{all_years}')
     if save_path:
         print(f'save {save_path}')

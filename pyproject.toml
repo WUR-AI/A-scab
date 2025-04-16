@@ -10,17 +10,17 @@ python = ">=3.10,<4.0"
 openmeteo-requests = "^1.2.0"
 requests-cache = "^1.2.1"
 retry-requests = "^2.0.0"
-pytz = "^2024.1"
 astral = "^3.2"
 pandas = "^2.2.2"
 datetime = "^5.5"
 matplotlib = "^3.9.0"
-gymnasium = "^0.29.1"
-numpy = "^1.26.4"
 scipy = "^1.13.0"
 xlrd = "^2.0.1"
 stable-baselines3 = {version = "^2.3.2", optional = true}
 tensorboard = {version= "^2.18.0", optional = true}
+pytz = "^2025.2"
+gymnasium = "^1.1.1"
+numpy = "^2.2.4"
 
 [tool.poetry.extras]
 sb-integration = ["stable-baselines3", "tensorboard"]

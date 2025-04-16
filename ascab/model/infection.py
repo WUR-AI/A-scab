@@ -46,12 +46,10 @@ def determine_discharge_hour_index(pat: float, rain_events: np.ndarray[1, np.boo
     # Rossi et al. page 304 (top left):
     # A rain event does not lead to spore ejection when:
     # * it occurs after less than 5 h from the preceding discharge event
-    # * leaf litter dries before 7.00 am following a rain event in night time when PAT < 0.80
+    # * leaf litter dries before 7.00 am following a rain event in night time when PAT < 0.80 [Not implemented]
     # * nightly rainfalls are followed by heavy dew deposition that persists some hours after sunrise
-    if np.logical_or(np.logical_or(hours_since_previous[first_rain_hour] < 5.0, heavy_dew),
-                     np.logical_and(first_rain_hour <= 7, pat <= 0.80)):
+    if np.logical_or(hours_since_previous[first_rain_hour] < 5.0, heavy_dew):
         return None
-
     # no delay
     # * PAT ≥ 0.80
     # * more than one third of the total season’s ascospores is mature inside pseudothecia

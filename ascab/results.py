@@ -1,9 +1,9 @@
 import os
 import pickle
-from shutil import which
 
 import numpy as np
-import matplotlib.pyplot as plt
+
+from ascab.utils.plot import plot_normalized_reward
 
 def separate_underscore(string, index = 0):
     string = string.split('_')
@@ -72,7 +72,7 @@ def main():
                 value = baselines_extracted[category][year][i]
                 print(f"           {baseline_name} = {value:.3f}")
 
-    plot_normalized_ceres(dict_extracted, baselines_extracted)
+    plot_normalized_reward(dict_extracted, baselines_extracted)
 
 if __name__ == '__main__':
     main()

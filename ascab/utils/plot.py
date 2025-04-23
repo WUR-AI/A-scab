@@ -155,3 +155,71 @@ def plot_precipitation_with_rain_event(df_hourly: pd.DataFrame, day: pd.Timestam
     # Add horizontal line at y = 0.2
     plt.axhline(y=0.2, color='red', linestyle='--', label='Threshold')
     plt.show()
+
+def plot_normalized_reward(dict_extracted, baselines_extracted):
+    years = sorted(dict_extracted['Reward'].keys())
+
+    baseline_u = []  # Umbrella
+    baseline_z = []  # Zero
+    baseline_c = []
+    baseline_r = []
+    rl_distributions = []
+
+    for yr in years:
+        # baselines_extracted['Reward'][yr] == [ceres, umbrella, zero]
+        ceres, rand, umb, zro = baselines_extracted['Reward'][yr]
+        worst = min(zro, rand, umb)
+        baseline_c.append((ceres - worst) / (ceres - worst))  # =1
+        baseline_r.append((rand - worst) / (ceres - worst))
+        baseline_u.append((umb - worst) / (ceres - worst))
+        baseline_z.append((zro - worst) / (ceres - worst))  # =0
+
+        rl_raw = np.array(dict_extracted['Reward'][yr])
+        # normalize RL seeds
+        rl_norm = (rl_raw - worst) / (ceres - worst)
+        rl_distributions.append(rl_norm)
+
+    # Compute medians and IQRs for RL
+    medians = [np.median(arr) for arr in rl_distributions]
+    q1s = [np.quantile(arr, 0.25) for arr in rl_distributions]
+    q3s = [np.quantile(arr, 0.75) for arr in rl_distributions]
+
+    x = np.arange(len(years))
+    offsets = {'Ceres': -0.2, 'RL': -0.1, 'Umbrella': 0.0, 'Random': 0.1, 'Zero': 0.2}
+
+    fig, ax = plt.subplots()
+
+    # scatter Ceres Umbrella & Zero
+    size = 40
+    ax.scatter(x + offsets['Ceres'], baseline_c, marker='o', s=size, label='Ceres', color='#e41a1c')
+    ax.scatter(x + offsets['Random'], baseline_r, marker='o', s=size, label='Random', color='#4daf4a')
+    ax.scatter(x + offsets['Umbrella'], baseline_u, marker='o', s=size, label='Umbrella', color='#ff7f00')
+    ax.scatter(x + offsets['Zero'], baseline_z, marker='o', s=size, label='Zero', color='#a65628')
+
+    # 2) RL medians + IQR errorbars
+    yerr_lower = [med - q1 for med, q1 in zip(medians, q1s)]
+    yerr_upper = [q3 - med for med, q3 in zip(medians, q3s)]
+    yerr = np.vstack([yerr_lower, yerr_upper])
+
+    ax.errorbar(
+        x + offsets['RL'],
+        medians,
+        yerr=yerr,
+        fmt='o',
+        capsize=5,
+        label='RL (median ± IQR)',
+        color='#377eb8',
+    )
+
+    # 3) reference oracle line
+    ax.axhline(1, linestyle='--')
+
+    # Formatting
+    ax.set_xticks(x)
+    ax.set_xticklabels(years)
+    ax.set_ylim(0, 1.05)
+    ax.set_ylabel('Normalized Reward')
+    ax.legend()
+    ax.grid(True)
+    plt.tight_layout()
+    plt.show()

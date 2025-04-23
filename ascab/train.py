@@ -215,6 +215,19 @@ class UmbrellaAgent(BaseAgent):
                 return 1.0
         return 0.0
 
+class RandomAgent(BaseAgent):
+    def __init__(
+        self,
+        ascab: Optional[AScabEnv] = None,
+        render: bool = True,
+        seed: Optional[int] = 42,
+    ):
+        super().__init__(ascab=ascab, render=render)
+        self.random_generator = np.random.RandomState(seed)
+
+    def get_action(self, observation: dict = None) -> float:
+        return self.random_generator.uniform(0.0, 1.0)
+
 
 class EvalLogger(BaseCallback):
     def __init__(self, tag: str = None):
@@ -348,6 +361,10 @@ if __name__ == "__main__":
     umbrella_agent = UmbrellaAgent(ascab=ascab_env_constrained, render=False)
     umbrella_results = umbrella_agent.run()
 
+    print("random agent")
+    random_agent = RandomAgent(ascab=ascab_env_constrained, render=False)
+    random_results = random_agent.run()
+
     ceres = True
     ceres_results = pd.DataFrame()
     if ceres:
@@ -381,9 +398,8 @@ if __name__ == "__main__":
         discrete_algos = ["PPO", "DQN", "RecurrentPPO"]
         box_algos = ["TD3", "SAC", "A2C", "RecurrentPPO"]
         algo = PPO
-        irs = None
         log_path = os.path.join(os.getcwd(), "log")
-        save_path = os.path.join(os.getcwd(), f"rl_agent_{algo.__name__}")
+        save_path = os.path.join(os.getcwd(), f"rl_agent_train_odd_{algo.__name__}")
         ascab_train = MultipleWeatherASCabEnv(
             weather_data_library=get_weather_library(
                 locations=[(42.1620, 3.0924), (42.1620, 3.0), (42.5, 2.5), (41.5, 3.0924), (42.5, 3.0924)],
@@ -400,11 +416,12 @@ if __name__ == "__main__":
         observation_filter = list(ascab_train.observation_space.keys())
 
         ascab_rl = RLAgent(ascab_train=ascab_train, ascab_test=ascab_test, observation_filter=observation_filter, n_steps=1_000_000,
-                           render=False, path_model=save_path, path_log=log_path, rl_algorithm=algo, irs=irs)
+                           render=False, path_model=save_path, path_log=log_path, rl_algorithm=algo)
         print(ascab_train.histogram)
         print(ascab_test.histogram)
         ascab_rl_results = ascab_rl.run()
-        plot_results({"zero": zero_results, "umbrella": umbrella_results, "rl": ascab_rl_results, "ceres": ceres_results},
+
+        plot_results({"zero": zero_results, "random": random_results, "umbrella": umbrella_results, "rl": ascab_rl_results, "ceres": ceres_results},
                      save_path=os.path.join(os.getcwd(), "results.png"), variables=["Precipitation", "LeafWetness", "AscosporeMaturation", "Discharge", "Pesticide", "Risk", "Action", "Phenology"])
     else:
         print("Stable-baselines3 is not installed. Skipping RL agent.")

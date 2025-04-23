@@ -29,8 +29,9 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variab
     fig, axes = plt.subplots(num_variables, 1, figsize=(10, num_variables), sharex=True)
     for index_results, (df_key, df) in enumerate(results.items()):
         if "Reward" in df.columns:
-            reward = df["Reward"].sum()
-            reward_string = (f"Reward: {reward.item():.2f}" if isinstance(reward, np.ndarray) and reward.size == 1 else f"{reward:.2f}")
+            df['Year'] = df['Date'].dt.year
+            reward_per_year = df.groupby('Year')['Reward'].sum()
+            reward_string = " | ".join([f"{year}: {total:.2f}" for year, total in reward_per_year.items()])
         else:
             reward_string = "N/A"
         # Iterate over each variable and create a subplot for it
@@ -40,9 +41,10 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variab
             if index_results == 0:
                 ax.text(0.015, 0.85, variable, transform=ax.transAxes, verticalalignment="top",horizontalalignment="left",
                         bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round,pad=0.25'))
-
+            df['Date'] = df['Date'].apply(lambda d: d.replace(year=2000))  # put all years on top of each other
             ax.step(df['Date'], df[variable], label=f'{df_key} {reward_string}', where='post', alpha=alpha)
-            if i == 0: ax.legend()
+            if i == (len(variables) - 1):
+                ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=2, frameon=False)
 
             if variable == 'LeafWetness':
                 ax.axhline(y=8.0, color="red", linestyle="--")
@@ -67,13 +69,11 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]], variab
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
     fig.autofmt_xdate(rotation=0)
     plt.setp(ax.get_xticklabels(), ha="center")
-    all_years = pd.to_datetime(
-        pd.concat([df["Date"] for df in results.values()])
-    ).dt.year.unique()
-    plt.xlabel(f'{all_years}')
+
     if save_path:
         print(f'save {save_path}')
-        plt.savefig(save_path, format='png', dpi=600, bbox_inches='tight')
+        plt.savefig(save_path, format='svg', dpi=600, bbox_inches='tight')
+    fig.subplots_adjust(bottom=0.25)
     plt.show()
 
 

@@ -81,7 +81,8 @@ def get_weather_library(
 
 def get_default_observations() -> list[str]:
     result = ['PseudothecialDevelopment', 'AscosporeMaturation', 'Ascospores', 'Discharge', 'Infections', 'Risk',
-              'LAI', 'Phenology', 'Pesticide']
+              'LAI', 'Phenology', 'Pesticide',# 'SinDay', 'CosDay'
+              ]
     result.extend(WeatherSummary.get_variable_names())
     result.append("Forecast")
     return result
@@ -112,7 +113,7 @@ class AScabEnv(gym.Env):
                  weather: pd.DataFrame = None, weather_forecast: dict[int, pd.DataFrame] = None,
                  days_of_forecast: int = get_default_days_of_forecast(),
                  biofix_date: str = None, budbreak_date: str = get_default_budbreak_date(),
-                 seed: int = 42, verbose: bool = False):
+                 seed: int = 42, verbose: bool = False, discrete_actions: bool = False,):
         super().reset(seed=seed)
 
         self.seed = seed
@@ -130,7 +131,10 @@ class AScabEnv(gym.Env):
             or "Forecast" in observation_filter
                and name.startswith("Forecast_") and name.split('_', 2)[-1] in observation_filter
         })
-        self.action_space = gym.spaces.Box(0, 1.0, shape=(), dtype=np.float32)
+        self.is_discrete = discrete_actions
+        self.action_space = gym.spaces.Box(0, 1.0, shape=(), dtype=np.float32) \
+                            if not self.is_discrete \
+                            else gym.spaces.Discrete(21)  # Discretize to bins of 0.05
         self.render_mode = 'human'
 
     def _get_days_of_forecast(self):
@@ -148,7 +152,7 @@ class AScabEnv(gym.Env):
         self.discharges = []
 
         self.date = self.dates[0]
-        self.info = {"Date": [],
+        self.info = {"Date": [], # "SinDay": [], "CosDay": [],
                      **{name: [] for name, _ in self.models.items()},
                      "Ascospores": [], "Discharge": [], "Infections": [], "Risk": [], "Pesticide": [],
                      **{name: [] for name in WeatherSummary.get_variable_names()},
@@ -164,6 +168,11 @@ class AScabEnv(gym.Env):
         Perform a single step in the Gym environment.
         """
         self.info["Date"].append(self.date)
+
+        # encode day into observation with cyclical sin and cos encoding
+        # day_of_year = self.date.timetuple().tm_yday
+        # self.info.setdefault("SinDay", []).append(np.sin(2 * np.pi * day_of_year / 365.0))
+        # self.info.setdefault("CosDay", []).append(np.cos(2 * np.pi * day_of_year / 365.0))
 
         df_summary_weather = summarize_weather([self.date], self.weather)
         varnames = [col for col in self.info.keys() if col in df_summary_weather.columns]
@@ -183,6 +192,10 @@ class AScabEnv(gym.Env):
             model.integrate()
         for model in self.models.values():
             self.info[model.__class__.__name__].append(model.value)
+
+        # apply pesticide
+        if isinstance(self.action_space, gym.spaces.Discrete):  # scale from Discrete to 0 to 1
+            action = action * 0.05
 
         self.pesticide.update(df_weather_day=df_weather_day, action=action)
 
@@ -258,7 +271,12 @@ class AScabEnv(gym.Env):
 
 
 class MultipleWeatherASCabEnv(AScabEnv):
-    def __init__(self, weather_data_library: WeatherDataLibrary, mode: str = "random", *args, **kwargs):
+    def __init__(self,
+                 weather_data_library: WeatherDataLibrary,
+                 mode: str = "random",
+                 discrete_actions: bool = False,
+                 *args,
+                 **kwargs):
         self.mode = mode
         self.weather_data_library = weather_data_library
         self.weather_keys = list(self.weather_data_library.data.keys())
@@ -266,8 +284,9 @@ class MultipleWeatherASCabEnv(AScabEnv):
         self.current_weather_key = self.weather_keys[0]  # Initialize the current weather key
         self.histogram = defaultdict(int)
         self.set_weather(self.current_weather_key)
+        self.is_discrete = discrete_actions
         super().__init__(dates=(self.dates[0].strftime("%Y-%m-%d"), self.dates[1].strftime("%Y-%m-%d")),
-                         weather=self.weather, weather_forecast=self.weather_forecast,
+                         weather=self.weather, weather_forecast=self.weather_forecast, discrete_actions=self.is_discrete,
                          *args, **kwargs)
 
     def set_weather(self, weather_key):

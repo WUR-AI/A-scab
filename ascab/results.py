@@ -7,7 +7,10 @@ from ascab.utils.plot import plot_normalized_reward
 
 def separate_underscore(string, index = 0):
     string = string.split('_')
-    return string[index]
+    if 'pkl' in string[-1]:
+        return string[index][:-4]
+    else:
+        return string[index]
 
 
 def extract_metrics(results_dict):
@@ -46,7 +49,7 @@ def main():
         if filename.endswith('.pkl') and filename not in baseline_pickle_names:
             with open(os.path.join(pkl_dir, filename), 'rb') as f:
                 # assumes filename is something like 'rl_agent_DQN_seed1_1.pkl'
-                results_dict[separate_underscore(filename, -2)] = pickle.load(f)
+                results_dict[separate_underscore(filename, -1)] = pickle.load(f)
 
         elif filename in baseline_pickle_names:
             with open(os.path.join(pkl_dir, filename), 'rb') as f:

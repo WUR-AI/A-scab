@@ -211,15 +211,14 @@ def plot_normalized_reward(dict_extracted, baselines_extracted):
         color='#377eb8',
     )
 
-    # 3) reference oracle line
-    ax.axhline(1, linestyle='--')
-
     # Formatting
     ax.set_xticks(x)
     ax.set_xticklabels(years)
     ax.set_ylim(0, 1.05)
+    ax.set_yticks(np.linspace(0,1,11))
     ax.set_ylabel('Normalized Reward')
+    ax.set_xlabel('Year')
     ax.legend()
-    ax.grid(True)
+    ax.grid(True, axis='y')
     plt.tight_layout()
     plt.show()

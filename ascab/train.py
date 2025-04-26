@@ -1,13 +1,12 @@
-import warnings
-warnings.filterwarnings("ignore", message=".*env.weather_keys.*")
-
 import datetime
 import os
 import abc
+import pickle
 import pandas as pd
 from typing import Optional, Dict, Any, Union, Type
 from scipy.optimize import basinhopping, Bounds
 import numpy as np
+
 from gymnasium.wrappers import FlattenObservation, FilterObservation
 
 from ascab.utils.plot import plot_results
@@ -20,6 +19,7 @@ try:
     from stable_baselines3 import PPO, SAC, TD3, DQN, HER
     from stable_baselines3.common.callbacks import EvalCallback, BaseCallback
     from stable_baselines3.common.monitor import Monitor
+    from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 except ImportError:
     PPO = None
 
@@ -27,7 +27,6 @@ try:
     from sb3_contrib import RecurrentPPO
 except ImportError:
     RecurrentPPO = None
-
 
 class BaseAgent(abc.ABC):
     def __init__(self, ascab: Optional[AScabEnv] = None, render: bool = True):
@@ -37,18 +36,23 @@ class BaseAgent(abc.ABC):
     def run(self) -> pd.DataFrame:
         all_infos = []
         all_rewards = []
-        n_eval_episodes = len(self.ascab.unwrapped.weather_keys) if hasattr(self.ascab.unwrapped, "weather_keys") else 1
+        if isinstance(self.ascab, VecNormalize):
+            n_eval_episodes = len(self.ascab.get_attr('weather_keys')[0]) if hasattr(self.ascab.unwrapped.envs[0], "weather_keys") else 1
+        else:
+            n_eval_episodes = len(self.ascab.unwrapped.weather_keys) if hasattr(self.ascab.unwrapped, "weather_keys") else 1
         for i in range(n_eval_episodes):
-            observation, _ = self.ascab.reset()
+            observation = self.reset_ascab()
             total_reward = 0.0
             terminated = False
             while not terminated:
                 action = self.get_action(observation)
-                observation, reward, terminated, _, _ = self.ascab.step(action)
+                observation, reward, terminated, info = self.step_ascab(action)
                 total_reward += reward
             all_rewards.append(total_reward)
             print(f"Reward: {total_reward}")
-            all_infos.append(self.ascab.unwrapped.get_info(to_dataframe=True))
+            all_infos.append(self.ascab.get_wrapper_attr('get_info')(to_dataframe=True)
+                             if not isinstance(self.ascab, VecNormalize)
+                             else self.filter_info(info))
             if self.render:
                 self.ascab.render()
         return pd.concat(all_infos, ignore_index=True)
@@ -56,6 +60,28 @@ class BaseAgent(abc.ABC):
     @abc.abstractmethod
     def get_action(self, observation: Optional[dict] = None) -> float:
         pass
+
+    def step_ascab(self, action):
+        if not isinstance(self.ascab, VecNormalize):
+            observation, reward, terminated, _, info = self.ascab.step(action)
+        else:
+            observation, reward, terminated, info = self.ascab.step(action)
+
+        return observation, reward, terminated, info
+
+    def reset_ascab(self):
+        # check if
+        if not isinstance(self.ascab, VecNormalize):
+            observation, _ = self.ascab.reset()
+        else:
+            observation = self.ascab.reset()
+        return observation
+
+    def filter_info(self, info):
+        info = {k: v for k, v in info[0].items() if
+                k not in {'TimeLimit.truncated', 'episode', 'terminal_observation'}}
+        info = pd.DataFrame(info).assign(Date=lambda x: pd.to_datetime(x["Date"]))
+        return info
 
 
 class CeresAgent(BaseAgent):
@@ -255,6 +281,7 @@ class CustomEvalCallback(EvalCallback):
             for cum_var in ["Action", "Reward"]:
                 self.logger.record(f"eval/{tag}-sum_{cum_var}", float(np.sum(info[cum_var])))
             print(f'{tag}: {np.sum(info["Reward"])}')
+            self.training_env.save(os.path.join(self.best_model_save_path+"_norm.pkl"))
 
 
 class RLAgent(BaseAgent):
@@ -269,6 +296,7 @@ class RLAgent(BaseAgent):
         path_log: Optional[str] = None,
         rl_algorithm: Union[Type[PPO],Type[TD3],Type[SAC],Type[DQN]] = None,
         discrete_actions: bool = False,
+        normalize: bool = True,
         seed: int = 42,
         continue_training: bool = False,
     ):
@@ -283,6 +311,8 @@ class RLAgent(BaseAgent):
         self.algo = rl_algorithm
         self.is_discrete = discrete_actions
         self.continue_training = continue_training
+        self.normalize = normalize
+
 
         self.train(seed)
 
@@ -296,23 +326,37 @@ class RLAgent(BaseAgent):
 
         if self.observation_filter:
             print(f"Filter observations: {self.observation_filter}")
-            self.ascab_train = FilterObservation(self.ascab_train, filter_keys=self.observation_filter)
+            if self.ascab_train:
+                self.ascab_train = FilterObservation(self.ascab_train, filter_keys=self.observation_filter)
+                self.ascab_train = FlattenObservation(self.ascab_train)
             self.ascab = FilterObservation(self.ascab, filter_keys=self.observation_filter)
-        self.ascab_train = FlattenObservation(self.ascab_train)
         self.ascab = FlattenObservation(self.ascab)
         if self.path_model is not None and (os.path.exists(self.path_model) or os.path.exists(self.path_model + ".zip")):
             print(f'Load model from disk: {self.path_model}')
-            self.model = PPO.load(env=self.ascab_train, path=self.path_model, print_system_info=False)
+            self.model = PPO.load(env=self.ascab_train if self.continue_training else self.ascab, path=self.path_model+".zip", print_system_info=False)
+            if self.normalize:
+                self.ascab = Monitor(self.ascab)
+                self.ascab = DummyVecEnv([lambda: self.ascab])
+                self.ascab = VecNormalize.load(self.path_model+"_norm.pkl", self.ascab)
+                self.ascab.training = False
+                self.ascab.norm_reward = False
             if not self.continue_training:
                 return
         else:
+
+            self.ascab = Monitor(self.ascab)
+            if self.normalize:
+                self.ascab_train = VecNormalize(DummyVecEnv([lambda: self.ascab_train]), norm_obs=True,
+                                                norm_reward=False)
+                self.ascab = VecNormalize(DummyVecEnv([lambda: self.ascab]), norm_obs=True, norm_reward=False,
+                                          training=False)
             eval_callback = CustomEvalCallback(
-                eval_env=Monitor(self.ascab),
+                eval_env=self.ascab,
                 eval_freq=1500,
                 deterministic=True,
                 render=False,
                 n_eval_episodes=len(self.ascab.weather_keys) if hasattr(self.ascab, "weather_keys") else 1,
-                best_model_save_path=os.path.dirname(self.path_model) if self.path_model else None,
+                best_model_save_path=self.path_model,
             )
             callbacks.append(eval_callback)
 
@@ -386,13 +430,6 @@ if __name__ == "__main__":
             year_results = optimizer.run_ceres_agent()
             ceres_results = pd.concat([ceres_results, year_results], ignore_index=True)
 
-
-
-    # print("ceres agent")
-    # optimizer = CeresOptimizer(ascab_env_constrained, os.path.join(os.getcwd(), "ceres_2022_new.txt"))
-    # optimizer.run_optimizer()
-    # ceres_results = optimizer.run_ceres_agent()
-
     if PPO is not None:
         print("rl agent")
         discrete_algos = ["PPO", "DQN", "RecurrentPPO"]
@@ -415,7 +452,7 @@ if __name__ == "__main__":
 
         observation_filter = list(ascab_train.observation_space.keys())
 
-        ascab_rl = RLAgent(ascab_train=ascab_train, ascab_test=ascab_test, observation_filter=observation_filter, n_steps=1_000_000,
+        ascab_rl = RLAgent(ascab_train=ascab_train, ascab_test=ascab_test, observation_filter=observation_filter, n_steps=100,
                            render=False, path_model=save_path, path_log=log_path, rl_algorithm=algo)
         print(ascab_train.histogram)
         print(ascab_test.histogram)

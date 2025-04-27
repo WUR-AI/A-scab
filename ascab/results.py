@@ -2,8 +2,9 @@ import os
 import pickle
 
 import numpy as np
+import pandas as pd
 
-from ascab.utils.plot import plot_normalized_reward
+from ascab.utils.plot import plot_normalized_reward, plot_pesticide_use
 
 def separate_underscore(string, index = 0):
     string = string.split('_')
@@ -19,6 +20,7 @@ def extract_metrics(results_dict):
     years_list = []
 
     for k, df in results_dict.items():
+
         if "Reward" in df.columns:
             df['Year'] = df['Date'].dt.year
             reward_per_year = df.groupby('Year')['Reward'].sum()
@@ -55,11 +57,13 @@ def main():
             with open(os.path.join(pkl_dir, filename), 'rb') as f:
                 baselines_dict[filename[:-4]] = pickle.load(f)
 
+    random_dict = baselines_dict.pop('random')
 
+    random_extracted = extract_metrics(random_dict)
     dict_extracted = extract_metrics(results_dict)
     baselines_extracted = extract_metrics(baselines_dict)
 
-    baseline_names = ["Ceres", "Random", "Umbrella", "Zero"]
+    baseline_names = ["Ceres", "Umbrella", "Zero"]
 
 
     for category in ["Reward", "Pesticide"]:
@@ -70,12 +74,17 @@ def main():
             std_val = np.std(values)
             # median_val = np.median(values)
             # iqr_val = np.quantile(values, 0.75) - np.quantile(values, 0.25)
+            values_ran = random_extracted[category][year]
+            mean_val_ran = np.mean(values_ran)
+            std_val_ran = np.std(values_ran)
             print(f"Year {year}: RL mean = {mean_val:.3f}, std = {std_val:.4f}")
+            print(f"           Random mean = {mean_val_ran:.3f}, std = {std_val_ran:.4f}")
             for i, baseline_name in enumerate(baseline_names):
                 value = baselines_extracted[category][year][i]
                 print(f"           {baseline_name} = {value:.3f}")
 
-    plot_normalized_reward(dict_extracted, baselines_extracted)
+    plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted, plot_type='scatter')
+    plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted)
 
 if __name__ == '__main__':
     main()

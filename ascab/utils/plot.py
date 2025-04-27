@@ -156,60 +156,127 @@ def plot_precipitation_with_rain_event(df_hourly: pd.DataFrame, day: pd.Timestam
     plt.axhline(y=0.2, color='red', linestyle='--', label='Threshold')
     plt.show()
 
-def plot_normalized_reward(dict_extracted, baselines_extracted):
+def plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted, plot_type='bar'):
     years = sorted(dict_extracted['Reward'].keys())
 
     baseline_u = []  # Umbrella
     baseline_z = []  # Zero
     baseline_c = []
-    baseline_r = []
+    random_distributions = []
     rl_distributions = []
 
     for yr in years:
-        # baselines_extracted['Reward'][yr] == [ceres, umbrella, zero]
-        ceres, rand, umb, zro = baselines_extracted['Reward'][yr]
-        worst = min(zro, rand, umb)
-        baseline_c.append((ceres - worst) / (ceres - worst))  # =1
-        baseline_r.append((rand - worst) / (ceres - worst))
-        baseline_u.append((umb - worst) / (ceres - worst))
-        baseline_z.append((zro - worst) / (ceres - worst))  # =0
-
         rl_raw = np.array(dict_extracted['Reward'][yr])
+        random_raw = np.array(random_extracted['Reward'][yr])
+
+
+        # baselines_extracted['Reward'][yr] == [ceres, umbrella, zero]
+        ceres, umb, zro = baselines_extracted['Reward'][yr]
+        lowest_rand = min(random_raw)
+        worst = min(zro, lowest_rand, umb)
+        baseline_c.append((ceres - worst) / (ceres - worst))  # =1
+        baseline_u.append((umb - worst) / (ceres - worst))
+        baseline_z.append((zro - worst) / (ceres - worst))
+
         # normalize RL seeds
         rl_norm = (rl_raw - worst) / (ceres - worst)
         rl_distributions.append(rl_norm)
 
-    # Compute medians and IQRs for RL
-    medians = [np.median(arr) for arr in rl_distributions]
-    q1s = [np.quantile(arr, 0.25) for arr in rl_distributions]
-    q3s = [np.quantile(arr, 0.75) for arr in rl_distributions]
+        random_norm = (random_raw - worst) / (ceres - worst)
+        random_distributions.append(random_norm)
+
+
+
+
+    # # Compute medians and IQRs for RL
+    # medians = [np.median(arr) for arr in rl_distributions]
+    # q1s = [np.quantile(arr, 0.25) for arr in rl_distributions]
+    # q3s = [np.quantile(arr, 0.75) for arr in rl_distributions]
+
+    means = [np.mean(arr) for arr in rl_distributions]
+    stds = [np.std(arr) for arr in rl_distributions]
+
+    means_random = [np.mean(arr) for arr in random_distributions]
+    stds_random = [np.std(arr) for arr in random_distributions]
 
     x = np.arange(len(years))
     offsets = {'Ceres': -0.2, 'RL': -0.1, 'Umbrella': 0.0, 'Random': 0.1, 'Zero': 0.2}
 
     fig, ax = plt.subplots()
 
-    # scatter Ceres Umbrella & Zero
-    size = 40
-    ax.scatter(x + offsets['Ceres'], baseline_c, marker='o', s=size, label='Ceres', color='#e41a1c')
-    ax.scatter(x + offsets['Random'], baseline_r, marker='o', s=size, label='Random', color='#4daf4a')
-    ax.scatter(x + offsets['Umbrella'], baseline_u, marker='o', s=size, label='Umbrella', color='#ff7f00')
-    ax.scatter(x + offsets['Zero'], baseline_z, marker='o', s=size, label='Zero', color='#a65628')
+    if plot_type == 'scatter':
 
-    # 2) RL medians + IQR errorbars
-    yerr_lower = [med - q1 for med, q1 in zip(medians, q1s)]
-    yerr_upper = [q3 - med for med, q3 in zip(medians, q3s)]
-    yerr = np.vstack([yerr_lower, yerr_upper])
+        # scatter Ceres Umbrella & Zero
+        size = 40
+        ax.scatter(x + offsets['Ceres'], baseline_c, marker='o', s=size, label='Ceres', color='#e41a1c')
+        # ax.scatter(x + offsets['Random'], baseline_r, marker='o', s=size, label='Random', color='#4daf4a')
+        ax.errorbar(
+            x + offsets['Random'],
+            # medians,
+            means_random,
+            yerr=stds_random,
+            fmt='o',
+            capsize=5,
+            label='Random (mean ± std)',
+            color='#4daf4a',
+        )
+        ax.scatter(x + offsets['Umbrella'], baseline_u, marker='o', s=size, label='Umbrella', color='#ff7f00')
+        ax.scatter(x + offsets['Zero'], baseline_z, marker='o', s=size, label='Zero', color='#a65628')
 
-    ax.errorbar(
-        x + offsets['RL'],
-        medians,
-        yerr=yerr,
-        fmt='o',
-        capsize=5,
-        label='RL (median ± IQR)',
-        color='#377eb8',
-    )
+        # 2) RL medians + IQR errorbars
+        # yerr_lower = [med - q1 for med, q1 in zip(medians, q1s)]
+        # yerr_upper = [q3 - med for med, q3 in zip(medians, q3s)]
+        # yerr = np.vstack([yerr_lower, yerr_upper])
+
+        yerr = stds
+
+        ax.errorbar(
+            x + offsets['RL'],
+            # medians,
+            means,
+            yerr=yerr,
+            fmt='o',
+            capsize=5,
+            label='RL (mean ± std)',
+            color='#377eb8',
+        )
+    elif plot_type == 'bar':
+        # Define bar width and offsets
+        width = 0.15
+        offsets = {
+            'Ceres': -2 * width,
+            'Umbrella': -1 * width,
+            'Zero': 0,
+            'RL': 1 * width,
+            'Random': 2 * width,
+        }
+        # Bars for baselines
+        ax.bar(x + offsets['Ceres'], baseline_c, width, label='Ceres', color='#e41a1c')
+        ax.bar(x + offsets['Umbrella'], baseline_u, width, label='Umbrella', color='#ff7f00')
+        ax.bar(x + offsets['Zero'], baseline_z, width, label='Zero', color='#a65628')
+
+        # Bars with errorbars for distributions
+        ax.bar(
+            x + offsets['RL'],
+            means,
+            width,
+            yerr=stds,
+            capsize=5,
+            label='RL (mean ± std)',
+            color='#377eb8',
+        )
+        ax.bar(
+            x + offsets['Random'],
+            means_random,
+            width,
+            yerr=stds_random,
+            capsize=5,
+            label='Random (mean ± std)',
+            color='#4daf4a',
+        )
+
+    else:
+        raise ValueError("plot_type must be either 'scatter' or 'bar'")
 
     # Formatting
     ax.set_xticks(x)
@@ -217,6 +284,85 @@ def plot_normalized_reward(dict_extracted, baselines_extracted):
     ax.set_ylim(0, 1.05)
     ax.set_yticks(np.linspace(0,1,11))
     ax.set_ylabel('Normalized Reward')
+    ax.set_xlabel('Year')
+    ax.legend()
+    ax.grid(True, axis='y')
+    plt.tight_layout()
+    plt.show()
+
+def plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted):
+    years = sorted(dict_extracted['Pesticide'].keys())
+
+    baseline_u = []  # Umbrella
+    baseline_z = []  # Zero
+    baseline_c = []
+    random_distributions = []
+    rl_distributions = []
+
+    for yr in years:
+        rl_raw = np.array(dict_extracted['Pesticide'][yr])
+        random_raw = np.array(random_extracted['Pesticide'][yr])
+
+
+        # baselines_extracted['Reward'][yr] == [ceres, umbrella, zero]
+        ceres, umb, zro = baselines_extracted['Pesticide'][yr]
+        baseline_c.append(ceres)
+        baseline_u.append(umb)
+        baseline_z.append(zro)
+
+        random_distributions.append(random_raw)
+        rl_distributions.append(rl_raw)
+
+    means = [np.mean(arr) for arr in rl_distributions]
+    stds = [np.std(arr) for arr in rl_distributions]
+
+    means_random = [np.mean(arr) for arr in random_distributions]
+    stds_random = [np.std(arr) for arr in random_distributions]
+
+    x = np.arange(len(years))
+
+    fig, ax = plt.subplots()
+
+    # Define bar width and offsets
+    width = 0.15
+    offsets = {
+        'Ceres': -2 * width,
+        'Umbrella': -1 * width,
+        'Zero': 0,
+        'RL': 1 * width,
+        'Random': 2 * width,
+    }
+    # Bars for baselines
+    ax.bar(x + offsets['Ceres'], baseline_c, width, label='Ceres', color='#e41a1c')
+    ax.bar(x + offsets['Umbrella'], baseline_u, width, label='Umbrella', color='#ff7f00')
+    ax.bar(x + offsets['Zero'], baseline_z, width, label='Zero', color='#a65628')
+
+    # Bars with errorbars for distributions
+    ax.bar(
+        x + offsets['RL'],
+        means,
+        width,
+        yerr=stds,
+        capsize=5,
+        label='RL (mean ± std)',
+        color='#377eb8',
+    )
+    ax.bar(
+        x + offsets['Random'],
+        means_random,
+        width,
+        yerr=stds_random,
+        capsize=5,
+        label='Random (mean ± std)',
+        color='#4daf4a',
+    )
+
+    # Formatting
+    ax.set_xticks(x)
+    ax.set_xticklabels(years)
+    ax.set_ylim(0, 15)
+    ax.set_yticks(np.linspace(0,15,16))
+    ax.set_ylabel('Pesticide Use')
     ax.set_xlabel('Year')
     ax.legend()
     ax.grid(True, axis='y')

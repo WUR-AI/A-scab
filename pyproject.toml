@@ -7,7 +7,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
-ascab = { git = "https://github.com/WUR-AI/A-scab.git", branch = "hackathon" }
+ascab = { git = "https://github.com/WUR-AI/A-scab.git", branch = "hackathon", path = "./A-scab", develop = true }
 openmeteo-requests = "^1.2.0"
 requests-cache = "^1.2.1"
 retry-requests = "^2.0.0"

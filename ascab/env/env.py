@@ -80,12 +80,42 @@ def get_weather_library(
 
 
 def get_default_observations() -> list[str]:
-    result = ['PseudothecialDevelopment', 'AscosporeMaturation', 'Ascospores', 'Discharge', 'Infections', 'Risk',
+    result = ['PseudothecialDevelopment', 'AscosporeMaturation', 'Ascospores',
+              'Discharge', 'Infections', 'Risk',
               'LAI', 'Phenology', 'Pesticide',# 'SinDay', 'CosDay'
               ]
     result.extend(WeatherSummary.get_variable_names())
     result.append("Forecast")
     return result
+
+
+def get_truncated_observations() -> list[str]:
+    result = ['PseudothecialDevelopment', 'AscosporeMaturation',
+              'Discharge', 'Infections',
+              'LAI', 'Phenology', 'Pesticide',
+              ]
+    result.extend(WeatherSummary.get_variable_names())
+    result.append("Forecast")
+    return result
+
+
+def get_weather_only_observations() -> list[str]:
+    result = []
+    result.extend(WeatherSummary.get_variable_names())
+    result.append("Forecast")
+    return result
+
+
+def get_observation_set(a):
+    if a == "full":
+        return get_default_observations()
+    elif a == "truncated":
+        return get_truncated_observations()
+    elif a == "weather_only":
+        return get_weather_only_observations()
+    else:
+        raise ValueError("Invalid observation set. Choose from full, truncated, weather_only")
+
 
 
 class AScabEnv(gym.Env):
@@ -113,7 +143,8 @@ class AScabEnv(gym.Env):
                  weather: pd.DataFrame = None, weather_forecast: dict[int, pd.DataFrame] = None,
                  days_of_forecast: int = get_default_days_of_forecast(),
                  biofix_date: str = None, budbreak_date: str = get_default_budbreak_date(),
-                 seed: int = 42, verbose: bool = False, discrete_actions: bool = False,):
+                 seed: int = 42, verbose: bool = False, discrete_actions: bool = False,
+                 truncated_observations: str = 'full',):
         super().reset(seed=seed)
 
         self.seed = seed
@@ -123,7 +154,8 @@ class AScabEnv(gym.Env):
         self.weather_forecast = weather_forecast if weather_forecast is not None else construct_forecast(self.weather)
         self._reset_internal(biofix_date=biofix_date, budbreak_date=budbreak_date)
 
-        observation_filter = get_default_observations()
+        observation_filter = get_observation_set(truncated_observations)
+        print(f"Truncated observations is {truncated_observations}")
         self.observation_space = gym.spaces.Dict({
             name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
             for name, _ in self.info.items()

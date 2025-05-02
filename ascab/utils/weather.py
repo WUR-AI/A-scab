@@ -180,15 +180,24 @@ def construct_key(latitude, longitude, start_date, end_date):
     return f"{latitude}_{longitude}_{start_date}_{end_date}"
 
 
+def get_loc_from_key(latitude, longitude, start_date, end_date):
+    return f"{latitude}_{longitude}_{start_date}_{end_date}"
+
+
 class WeatherDataLibrary:
     def __init__(self):
         self.data = {}
 
-    def collect_weather(self, params, key=None):
+    def collect_weather(self, params, *, key=None, loaded_weather: pd.DataFrame = None):
         if key is None:
             key = construct_key(params["latitude"], params["longitude"], params["start_date"], params["end_date"])
 
-        weather_data = get_meteo(params)
+        if loaded_weather is None:
+            weather_data = get_meteo(params)
+            # weather_data.to_csv(f"C:\\PycharmProjects\\ascab\\A-scab\\weather_{params['latitude']}_{params['longitude']}_{params['start_date']}_{params['end_date']}.csv")
+        else:
+            weather_data = loaded_weather
+
         weather_forecast = construct_forecast(weather_data)
         self.data[key] = {"weather": weather_data, "weather_forecast": weather_forecast}
 

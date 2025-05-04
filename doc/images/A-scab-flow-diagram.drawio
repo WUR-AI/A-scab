@@ -98,7 +98,7 @@
         <mxCell id="6dCjVsRnEGVFP1sll2dR-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="WIyWlLk6GJQsqaUBKTNV-1" source="5mpgaOhmx2K6TdilGUXI-0" target="5mpgaOhmx2K6TdilGUXI-13" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="5mpgaOhmx2K6TdilGUXI-0" value="&lt;font face=&quot;Times New Roman&quot;&gt;dischargable ascospores&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;" parent="WIyWlLk6GJQsqaUBKTNV-1" vertex="1">
+        <mxCell id="5mpgaOhmx2K6TdilGUXI-0" value="&lt;font face=&quot;Times New Roman&quot;&gt;dischargeable ascospores&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;" parent="WIyWlLk6GJQsqaUBKTNV-1" vertex="1">
           <mxGeometry x="383" y="80" width="74" height="40" as="geometry" />
         </mxCell>
         <mxCell id="5mpgaOhmx2K6TdilGUXI-36" value="&lt;div&gt;&lt;font face=&quot;Times New Roman&quot;&gt;infection conditions&lt;/font&gt;&lt;/div&gt;" style="rhombus;whiteSpace=wrap;html=1;" parent="WIyWlLk6GJQsqaUBKTNV-1" vertex="1">
@@ -213,7 +213,7 @@
         <mxCell id="6dCjVsRnEGVFP1sll2dR-10" value="&lt;font style=&quot;color: rgb(0, 0, 204);&quot; face=&quot;Times New Roman&quot;&gt;efficacy&lt;/font&gt;" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;strokeColor=#0000CC;" parent="WIyWlLk6GJQsqaUBKTNV-1" vertex="1">
           <mxGeometry x="490.5" y="298.75" width="70" height="17.5" as="geometry" />
         </mxCell>
-        <mxCell id="5mpgaOhmx2K6TdilGUXI-42" value="&lt;font face=&quot;Times New Roman&quot;&gt;with appresorium&lt;/font&gt;" style="whiteSpace=wrap;html=1;strokeColor=#000000;" parent="WIyWlLk6GJQsqaUBKTNV-1" vertex="1">
+        <mxCell id="5mpgaOhmx2K6TdilGUXI-42" value="&lt;font face=&quot;Times New Roman&quot;&gt;with appressorium&lt;/font&gt;" style="whiteSpace=wrap;html=1;strokeColor=#000000;" parent="WIyWlLk6GJQsqaUBKTNV-1" vertex="1">
           <mxGeometry x="560" y="250" width="71" height="30" as="geometry" />
         </mxCell>
         <mxCell id="pIgknFnEnsm8QzmO-ptJ-80" value="&lt;font style=&quot;color: rgb(0, 0, 204);&quot; face=&quot;Times New Roman&quot;&gt;pesticide application&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;glass=0;strokeWidth=1;shadow=0;strokeColor=#0000CC;" parent="WIyWlLk6GJQsqaUBKTNV-1" vertex="1">

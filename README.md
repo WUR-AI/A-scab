@@ -4,12 +4,13 @@ Gymnasium Environment for Apple Scab Model (A-scab)
 
 The environment is designed based on the A-scab model described in Rossi et al. (2007) [1].
 
-The A-scab model simulates the development of pseudothecia, ascospore maturation, discharge, deposition,
+The A-scab model simulates the ontogenesis of pseudothecia, ascospore maturation, discharge, deposition,
 and infection throughout the season. The simulation uses hourly weather data to predict these processes.
 The model produces a severity index for each infection period.
 
 ![A-scab flow diagram](doc/images/A-scab-flow-diagram.png)
-*Figure 1: Flow diagram of A-scab model.*
+*Figure 1: Flow diagram of the A-scab model.
+The A-scab model simulates the seasonal apple scab infection cycle, including the ontogenesis of pseudothecia, ascospore maturation, discharge, deposition, and infection processes (grouped in dashed boxes). Blue elements represent extensions to the original model, namely pesticide dynamics and biofix-based phenological alignment.*
 
 The observation space comprises three elements:
 1. The state of the tree (e.g. LAI)

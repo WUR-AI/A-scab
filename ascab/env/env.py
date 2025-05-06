@@ -80,7 +80,7 @@ def get_weather_library(
 
 
 def get_default_observations() -> list[str]:
-    result = ['PseudothecialDevelopment', 'AscosporeMaturation', 'Ascospores', 'Discharge', 'Infections', 'Risk',
+    result = ['PseudothecialDevelopment', 'InfectionWindow', 'AscosporeMaturation', 'Discharge', 'Infections', 'Risk',
               'LAI', 'Phenology', 'Pesticide']
     result.extend(WeatherSummary.get_variable_names())
     result.append("Forecast")
@@ -141,7 +141,7 @@ class AScabEnv(gym.Env):
         ascospore = AscosporeMaturation(pseudothecia, biofix_date=biofix_date)
         lai = LAI(start_date=budbreak_date)
         phenology = Phenology()
-        self.pesticide = Pesticide(growth_diminish_rate_per_hour=0.006)
+        self.pesticide = Pesticide(dilution_rate_per_hour=0.006)
 
         self.models = {type(model).__name__: model for model in [pseudothecia, ascospore, lai, phenology]}
         self.infections = []
@@ -150,7 +150,7 @@ class AScabEnv(gym.Env):
         self.date = self.dates[0]
         self.info = {"Date": [],
                      **{name: [] for name, _ in self.models.items()},
-                     "Ascospores": [], "Discharge": [], "Infections": [], "Risk": [], "Pesticide": [],
+                     "InfectionWindow": [], "Discharge": [], "Infections": [], "Risk": [], "Pesticide": [],
                      **{name: [] for name in WeatherSummary.get_variable_names()},
                      **{
                          f"Forecast_day{day}_{name}": []
@@ -185,14 +185,13 @@ class AScabEnv(gym.Env):
             self.info[model.__class__.__name__].append(model.value)
 
         self.pesticide.update(df_weather_day=df_weather_day, action=action)
-
         lai_value = self.models['LAI'].value
         ascospore_value = self.models['AscosporeMaturation'].value
         time_previous, pat_previous = get_values_last_discharge(self.discharges)
         discharge_date = get_discharge_date(df_weather_day, pat_previous, ascospore_value, time_previous)
 
         self.info['Discharge'].append((discharge_date is not None) * (ascospore_value - pat_previous))
-        self.info['Ascospores'].append(ascospore_value - pat_previous)
+        self.info['InfectionWindow'].append(int(get_pat_threshold() < ascospore_value < 0.99))
         self.info["Action"].append(action)
         self.info["Pesticide"].append(self.pesticide.effective_coverage[-1])
 

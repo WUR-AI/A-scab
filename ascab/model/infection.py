@@ -594,11 +594,11 @@ class PesticideApplication:
         wash_off = self.remaining_pesticide * (self.removal_rate_per_mm_rain * rain)
         self.remaining_pesticide = max(0.0, self.remaining_pesticide - wash_off)
 
-    def update_coverage(self, growth_diminish_rate_per_hour=0.006):
+    def update_coverage(self, dilution_rate_per_hour=0.006):
         """
-        Updates the coverage based on the growth diminish rate.
+        Updates the coverage based on the dilution rate.
         """
-        self.coverage = max(0.0, self.coverage - growth_diminish_rate_per_hour)
+        self.coverage = max(0.0, self.coverage - dilution_rate_per_hour)
 
     def is_application_valid(self, current_datetime: datetime):
         """
@@ -622,7 +622,7 @@ class Pesticide:
         applications (list[PesticideApplication]): List of pesticide applications.
     """
 
-    def __init__(self, growth_diminish_rate_per_hour: float = 0.006):
+    def __init__(self, dilution_rate_per_hour: float = 0.006):
         """
         Initializes the Pesticide class with an initial amount.
 
@@ -630,7 +630,7 @@ class Pesticide:
             initial_amount (float): The initial amount of pesticide present.
         """
         self.applications = []  # List to hold all pesticide applications
-        self.growth_diminish_rate_per_hour = growth_diminish_rate_per_hour  # Coverage diminishes by this rate per hour
+        self.dilution_rate_per_hour = dilution_rate_per_hour  # Coverage diminishes by this rate per hour
         self.effective_coverage = [0.0] * 24  # Initialize effective coverage for 24 hours
 
     def apply_pesticide(self, amount: float, application_datetime: datetime, removal_rate_per_mm_rain: float = 0.1):
@@ -662,7 +662,7 @@ class Pesticide:
             for application in self.applications:
                 if application.is_application_valid(current_datetime):
                     application.update_remaining(rains[hour])
-                    application.update_coverage(growth_diminish_rate_per_hour=0.006)  # Update coverage for each application
+                    application.update_coverage(dilution_rate_per_hour=self.dilution_rate_per_hour)  # Update coverage for each application
 
                     # Calculate the effective coverage for the hour
                     effective_coverage_for_hour = application.remaining_pesticide * application.coverage

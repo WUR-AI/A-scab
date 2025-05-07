@@ -235,15 +235,17 @@ class UmbrellaAgent(BaseAgent):
         self,
         ascab: Optional[AScabEnv] = None,
         render: bool = True,
-        pesticide_threshold: float = 0.1
+        pesticide_threshold: float = 0.1,
+        pesticide_filled_to: float = 0.5,
     ):
         super().__init__(ascab=ascab, render=render)
         self.pesticide_threshold = pesticide_threshold
+        self.pesticide_filled_to = pesticide_filled_to
 
     def get_action(self, observation: dict = None) -> float:
         if self.ascab.get_wrapper_attr("info")["Forecast_day1_HasRain"] and self.ascab.get_wrapper_attr("info")["Forecast_day1_HasRain"][-1]:
             if self.ascab.get_wrapper_attr("info")["Pesticide"] and self.ascab.get_wrapper_attr("info")["Pesticide"][-1] < self.pesticide_threshold:
-                return 1.0
+                return self.pesticide_filled_to - self.ascab.get_wrapper_attr("info")["Pesticide"][-1]
         return 0.0
 
 class RandomAgent(BaseAgent):
@@ -453,9 +455,9 @@ if __name__ == "__main__":
         algo = PPO
         log_path = os.path.join(os.getcwd(), "log")
         save_path = os.path.join(os.getcwd(), f"rl_agent_train_odd_{algo.__name__}")
-        with open(save_path + "cer.pkl", "wb") as f:
-            print(f"saved to {save_path+'cer.pkl'}")
-            pickle.dump(ceres_results, file=f)
+        # with open(save_path + "cer.pkl", "wb") as f:
+        #     print(f"saved to {save_path+'cer.pkl'}")
+        #     pickle.dump(ceres_results, file=f)
         ascab_train = MultipleWeatherASCabEnv(
             weather_data_library=get_weather_library(
                 locations=[(42.1620, 3.0924), (42.1620, 3.0), (42.5, 2.5), (41.5, 3.0924), (42.5, 3.0924)],
@@ -468,6 +470,9 @@ if __name__ == "__main__":
                 dates=get_dates([year for year in range(2016, 2025) if year % 2 != 0], start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season())),
             biofix_date="March 10", budbreak_date="March 10", mode="sequential", discrete_actions=True if algo.__name__ in discrete_algos else False
         )
+
+        ascab_train = ActionConstrainer(ascab_train, action_budget=8)
+        ascab_test = ActionConstrainer(ascab_test, action_budget=8)
 
         observation_filter = list(ascab_train.observation_space.keys())
 

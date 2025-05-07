@@ -87,6 +87,32 @@ def get_default_observations() -> list[str]:
     return result
 
 
+def get_truncated_observations() -> list[str]:
+    result = ['InfectionWindow', 'Discharge', 'LAI', 'ActionHistory', 'SinceLastAction', 'AppliedPesticide', 'DayOfYear' 'Beta']
+    result.extend(WeatherSummary.get_variable_names())
+    result.append("Forecast")
+    return result
+
+
+def get_weather_only_observations() -> list[str]:
+    result = []
+    result.extend(WeatherSummary.get_variable_names())
+    result.append("Forecast")
+    return result
+
+
+def get_observation_set(a):
+    if a == "full":
+        return get_default_observations()
+    elif a == "truncated":
+        return get_truncated_observations()
+    elif a == "weather_only":
+        return get_weather_only_observations()
+    else:
+        raise ValueError("Invalid observation set. Choose from full, truncated, weather_only")
+
+
+
 class AScabEnv(gym.Env):
     """
     Gymnasium Environment for Apple Scab Model (A-scab)
@@ -112,7 +138,8 @@ class AScabEnv(gym.Env):
                  weather: pd.DataFrame = None, weather_forecast: dict[int, pd.DataFrame] = None,
                  days_of_forecast: int = get_default_days_of_forecast(),
                  biofix_date: str = None, budbreak_date: str = get_default_budbreak_date(),
-                 seed: int = 42, verbose: bool = False):
+                 seed: int = 42, verbose: bool = False, discrete_actions: bool = False,
+                 truncated_observations: str = 'full',):
         super().reset(seed=seed)
 
         self.seed = seed
@@ -121,16 +148,24 @@ class AScabEnv(gym.Env):
         self.weather = weather if weather is not None else get_meteo(get_weather_params(location, dates, days_of_forecast), verbose=False)
         self.weather_forecast = weather_forecast if weather_forecast is not None else construct_forecast(self.weather)
         self._reset_internal(biofix_date=biofix_date, budbreak_date=budbreak_date)
+        self.total_pesticide_applied: float = 0.0
+        self.since_last_spray: int = 0
+        self.total_spraying_frequency: int = 0
+        self.beta: float = 0.025
 
-        observation_filter = get_default_observations()
+        observation_filter = get_observation_set(truncated_observations)
+        print(f"Truncated observations is {truncated_observations}")
         self.observation_space = gym.spaces.Dict({
-            name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
+            name: gym.spaces.Box(-np.inf, np.inf, shape=(), dtype=np.float32)
             for name, _ in self.info.items()
             if name in observation_filter
             or "Forecast" in observation_filter
                and name.startswith("Forecast_") and name.split('_', 2)[-1] in observation_filter
         })
-        self.action_space = gym.spaces.Box(0, 1.0, shape=(), dtype=np.float32)
+        self.is_discrete = discrete_actions
+        self.action_space = gym.spaces.Box(0, 1.0, shape=(), dtype=np.float32) \
+                            if not self.is_discrete \
+                            else gym.spaces.Discrete(21)  # Discretize to bins of 0.05
         self.render_mode = 'human'
 
     def _get_days_of_forecast(self):
@@ -148,9 +183,10 @@ class AScabEnv(gym.Env):
         self.discharges = []
 
         self.date = self.dates[0]
-        self.info = {"Date": [],
+        self.info = {"Date": [], "DayOfYear": [],
                      **{name: [] for name, _ in self.models.items()},
                      "InfectionWindow": [], "Discharge": [], "Infections": [], "Risk": [], "Pesticide": [],
+                     "ActionHistory": [], "SinceLastAction": [], "AppliedPesticide": [], "Beta": [],
                      **{name: [] for name in WeatherSummary.get_variable_names()},
                      **{
                          f"Forecast_day{day}_{name}": []
@@ -164,6 +200,11 @@ class AScabEnv(gym.Env):
         Perform a single step in the Gym environment.
         """
         self.info["Date"].append(self.date)
+
+        # encode day into observation with cyclical sin and cos encoding
+        day_of_year = self.date.timetuple().tm_yday
+        # self.info.setdefault("SinDay", []).append(np.sin(2 * np.pi * day_of_year / 365.0))
+        # self.info.setdefault("CosDay", []).append(np.cos(2 * np.pi * day_of_year / 365.0))
 
         df_summary_weather = summarize_weather([self.date], self.weather)
         varnames = [col for col in self.info.keys() if col in df_summary_weather.columns]
@@ -183,6 +224,12 @@ class AScabEnv(gym.Env):
             model.integrate()
         for model in self.models.values():
             self.info[model.__class__.__name__].append(model.value)
+
+        # apply pesticide
+        if isinstance(self.action_space, gym.spaces.Discrete):  # scale from Discrete to 0 to 1
+            action = action * 0.05
+
+        self._record_action(action)
 
         self.pesticide.update(df_weather_day=df_weather_day, action=action)
         lai_value = self.models['LAI'].value
@@ -208,10 +255,15 @@ class AScabEnv(gym.Env):
 
         for infection in self.infections:
             infection.progress(df_weather_day, self.pesticide.effective_coverage)
+        self.info['ActionHistory'].append(self.total_spraying_frequency)
+        self.info['SinceLastAction'].append(self.since_last_spray)
+        self.info['AppliedPesticide'].append(self.total_pesticide_applied)
+        self.info['Beta'].append(self.beta)
+        self.info['DayOfYear'].append(day_of_year)
         self.info["Infections"].append(len(self.infections))
         self.info["Risk"].append(get_risk(self.infections, self.date))
         o = self._get_observation()
-        r = self._get_reward()
+        r = self._get_reward(beta=self.beta)
         i = self.get_info()
         self.info["Reward"].append(r)
 
@@ -233,10 +285,10 @@ class AScabEnv(gym.Env):
     def _terminated(self):
         return self.date >= self.dates[1]
 
-    def _get_reward(self):
+    def _get_reward(self, beta: float = 0.025):
         risk = self.info["Risk"][-1]
         action = self.info["Action"][-1]
-        result = -risk - (action * 0.025)
+        result = -risk - (action * beta)
         return float(result)
 
     def render(self):
@@ -251,13 +303,32 @@ class AScabEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        self._reset_action_records()
         self._reset_internal(biofix_date=self.models['AscosporeMaturation'].biofix_date,
                              budbreak_date=self.models['LAI'].start_date)
         return self._get_observation(), self.get_info()
 
+    def _record_action(self, action):
+        if action > 0.0:
+            self.total_spraying_frequency += 1
+            self.total_pesticide_applied +=action
+            self.since_last_spray = 0
+        if action == 0.0:
+            self.since_last_spray += 1
+
+    def _reset_action_records(self):
+        self.total_spraying_frequency = 0
+        self.total_pesticide_applied = 0.0
+        self.since_last_spray = 0
+
 
 class MultipleWeatherASCabEnv(AScabEnv):
-    def __init__(self, weather_data_library: WeatherDataLibrary, mode: str = "random", *args, **kwargs):
+    def __init__(self,
+                 weather_data_library: WeatherDataLibrary,
+                 mode: str = "random",
+                 discrete_actions: bool = False,
+                 *args,
+                 **kwargs):
         self.mode = mode
         self.weather_data_library = weather_data_library
         self.weather_keys = list(self.weather_data_library.data.keys())
@@ -265,8 +336,9 @@ class MultipleWeatherASCabEnv(AScabEnv):
         self.current_weather_key = self.weather_keys[0]  # Initialize the current weather key
         self.histogram = defaultdict(int)
         self.set_weather(self.current_weather_key)
+        self.is_discrete = discrete_actions
         super().__init__(dates=(self.dates[0].strftime("%Y-%m-%d"), self.dates[1].strftime("%Y-%m-%d")),
-                         weather=self.weather, weather_forecast=self.weather_forecast,
+                         weather=self.weather, weather_forecast=self.weather_forecast, discrete_actions=self.is_discrete,
                          *args, **kwargs)
 
     def set_weather(self, weather_key):
@@ -308,10 +380,42 @@ class MultipleWeatherASCabEnv(AScabEnv):
 
 
 class ActionConstrainer(gym.ActionWrapper):
-    def __init__(self, env: AScabEnv):
+    """
+    An action constrainer wrapper to constrain agents timestep-wise or frequency-wise (i.e., action of > 0.0)
+    Use :param risk_period to constrain it only to act in certain timesteps
+    and use :param action_budget to constrain it to act only a limited amount of times per-episode
+    """
+    def __init__(self, env: AScabEnv,
+                 risk_period: bool = False,
+                 action_budget: int = 0,
+
+    ):
         super(ActionConstrainer, self).__init__(env)
+        self.risk_period = risk_period
+        self.action_budget = max(0, int(action_budget))
+        self.actions_left = action_budget
+
+    def reset(self, seed=None, options=None):
+        self.actions_left = self.action_budget
+        return super().reset(seed=seed, options=options)
 
     def action(self, action):
+        if self.risk_period:
+            action = self._constrain_risk_period(action)
+        if self.action_budget > 0:
+            action = self.constrain_action_budget(action)
+        return action
+
+    def _constrain_risk_period(self, action):
         if self.unwrapped.models["AscosporeMaturation"].value < get_pat_threshold() or self.unwrapped.models["AscosporeMaturation"].value > 0.99:
             return action * 0.0
         return action
+
+    def constrain_action_budget(self, action):
+        if action > 0.0:
+            if self.actions_left > 0:
+                self.actions_left -= 1
+            else:
+                action = 0.0
+        return action
+

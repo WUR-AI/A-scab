@@ -81,7 +81,7 @@ def get_weather_library(
 
 def get_default_observations() -> list[str]:
     result = ['PseudothecialDevelopment', 'InfectionWindow', 'AscosporeMaturation', 'Discharge', 'Infections', 'Risk',
-              'LAI', 'Phenology', 'Pesticide',# 'SinDay', 'CosDay'
+              'LAI', 'Phenology', 'Pesticide', 'Beta'# 'SinDay', 'CosDay'
               ]
     result.extend(WeatherSummary.get_variable_names())
     result.append("Forecast")
@@ -89,7 +89,7 @@ def get_default_observations() -> list[str]:
 
 
 def get_truncated_observations() -> list[str]:
-    result = ['InfectionWindow', 'Discharge', 'LAI', 'ActionHistory', 'AppliedPesticide', 'SinDay', 'CosDay']
+    result = ['InfectionWindow', 'Discharge', 'LAI', 'ActionHistory', 'AppliedPesticide', 'SinDay', 'CosDay' 'Beta']
     result.extend(WeatherSummary.get_variable_names())
     result.append("Forecast")
     return result
@@ -151,6 +151,7 @@ class AScabEnv(gym.Env):
         self._reset_internal(biofix_date=biofix_date, budbreak_date=budbreak_date)
         self.total_pesticide_applied: float = 0.0
         self.total_spraying_frequency: int = 0
+        self.beta: float = 0.025
 
         observation_filter = get_observation_set(truncated_observations)
         print(f"Truncated observations is {truncated_observations}")
@@ -185,7 +186,7 @@ class AScabEnv(gym.Env):
         self.info = {"Date": [], "SinDay": [], "CosDay": [],
                      **{name: [] for name, _ in self.models.items()},
                      "InfectionWindow": [], "Discharge": [], "Infections": [], "Risk": [], "Pesticide": [],
-                     "ActionHistory": [], "AppliedPesticide": [],
+                     "ActionHistory": [], "AppliedPesticide": [], "Beta": [],
                      **{name: [] for name in WeatherSummary.get_variable_names()},
                      **{
                          f"Forecast_day{day}_{name}": []
@@ -257,10 +258,11 @@ class AScabEnv(gym.Env):
             infection.progress(df_weather_day, self.pesticide.effective_coverage)
         self.info['ActionHistory'].append(self.total_spraying_frequency)
         self.info['AppliedPesticide'].append(self.total_pesticide_applied)
+        self.info['Beta'].append(self.beta)
         self.info["Infections"].append(len(self.infections))
         self.info["Risk"].append(get_risk(self.infections, self.date))
         o = self._get_observation()
-        r = self._get_reward()
+        r = self._get_reward(beta=self.beta)
         i = self.get_info()
         self.info["Reward"].append(r)
 
@@ -282,10 +284,10 @@ class AScabEnv(gym.Env):
     def _terminated(self):
         return self.date >= self.dates[1]
 
-    def _get_reward(self):
+    def _get_reward(self, beta: float = 0.025):
         risk = self.info["Risk"][-1]
         action = self.info["Action"][-1]
-        result = -risk - (action * 0.025)
+        result = -risk - (action * beta)
         return float(result)
 
     def render(self):

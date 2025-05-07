@@ -46,11 +46,11 @@ def run_seed(seed: int) -> str:
 
     discrete_algos = ["PPO", "DQN", "RecurrentPPO"]
     algo = PPO
-    constrain = False
+    constrain = True
     normalize = True
     truncated_observations='truncated'
     log_path = os.path.join(os.getcwd(), "log")
-    name_agent = f"rl_agent_{algo.__name__}_weather_obs_seed{seed}"
+    name_agent = f"rl_agent_{algo.__name__}_trunc_new_seed{seed}"
     save_path = os.path.join(os.getcwd(), "log", name_agent)
     # os.makedirs(save_path, exist_ok=True)
     save_path = unique_path(save_path)
@@ -79,8 +79,8 @@ def run_seed(seed: int) -> str:
     observation_filter = list(ascab_train.observation_space.keys())
 
     if constrain:
-        ascab_train = ActionConstrainer(ascab_train)
-        ascab_test = ActionConstrainer(ascab_test)
+        ascab_train = ActionConstrainer(ascab_train, action_budget=8)
+        ascab_test = ActionConstrainer(ascab_test, action_budget=8)
 
     ascab_rl = RLAgent(ascab_train=ascab_train, ascab_test=ascab_test, observation_filter=observation_filter,
                        n_steps=1_000_000, render=False, path_model=save_path, path_log=log_path, rl_algorithm=algo,
@@ -93,8 +93,6 @@ def run_seed(seed: int) -> str:
 
     with open(save_path+".pkl", "wb") as f:
         pickle.dump(results, file=f)
-
-
 
     return save_path
 

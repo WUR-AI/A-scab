@@ -34,6 +34,7 @@ class BaseAgent(abc.ABC):
         self.render = render
 
     def run(self) -> pd.DataFrame:
+
         all_infos = []
         all_rewards = []
         n_eval_episodes = self.get_n_eval_episodes()
@@ -235,15 +236,17 @@ class UmbrellaAgent(BaseAgent):
         self,
         ascab: Optional[AScabEnv] = None,
         render: bool = True,
-        pesticide_threshold: float = 0.1
+        pesticide_threshold: float = 0.1,
+        pesticide_filled_to: float = 0.5,
     ):
         super().__init__(ascab=ascab, render=render)
         self.pesticide_threshold = pesticide_threshold
+        self.pesticide_filled_to = pesticide_filled_to
 
     def get_action(self, observation: dict = None) -> float:
         if self.ascab.get_wrapper_attr("info")["Forecast_day1_HasRain"] and self.ascab.get_wrapper_attr("info")["Forecast_day1_HasRain"][-1]:
             if self.ascab.get_wrapper_attr("info")["Pesticide"] and self.ascab.get_wrapper_attr("info")["Pesticide"][-1] < self.pesticide_threshold:
-                return 1.0
+                return self.pesticide_filled_to - self.ascab.get_wrapper_attr("info")["Pesticide"][-1]
         return 0.0
 
 class RandomAgent(BaseAgent):
@@ -468,6 +471,9 @@ if __name__ == "__main__":
                 dates=get_dates([year for year in range(2016, 2025) if year % 2 != 0], start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season())),
             biofix_date="March 10", budbreak_date="March 10", mode="sequential", discrete_actions=True if algo.__name__ in discrete_algos else False
         )
+
+        ascab_train = ActionConstrainer(ascab_train, action_budget=8)
+        ascab_test = ActionConstrainer(ascab_test, action_budget=8)
 
         observation_filter = list(ascab_train.observation_space.keys())
 

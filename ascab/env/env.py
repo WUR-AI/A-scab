@@ -124,20 +124,15 @@ def get_weather_library_from_csv(
 
 
 def get_default_observations() -> list[str]:
-    result = ['PseudothecialDevelopment', 'AscosporeMaturation', 'Ascospores',
-              'Discharge', 'Infections', 'Risk',
-              'LAI', 'Phenology', 'Pesticide',# 'SinDay', 'CosDay'
-              ]
+    result = ['PseudothecialDevelopment', 'InfectionWindow', 'AscosporeMaturation', 'Discharge', 'Infections', 'Risk',
+              'LAI', 'Phenology', 'Pesticide']
     result.extend(WeatherSummary.get_variable_names())
     result.append("Forecast")
     return result
 
 
 def get_truncated_observations() -> list[str]:
-    result = ['PseudothecialDevelopment', 'AscosporeMaturation',
-              'Discharge', 'Infections',
-              'LAI', 'Phenology', 'Pesticide',
-              ]
+    result = ['InfectionWindow', 'Discharge', 'LAI', 'ActionHistory', 'SinceLastAction', 'AppliedPesticide', 'DayOfYear' 'Beta']
     result.extend(WeatherSummary.get_variable_names())
     result.append("Forecast")
     return result
@@ -197,11 +192,15 @@ class AScabEnv(gym.Env):
         self.weather = weather if weather is not None else get_meteo(get_weather_params(location, dates, days_of_forecast), verbose=False)
         self.weather_forecast = weather_forecast if weather_forecast is not None else construct_forecast(self.weather)
         self._reset_internal(biofix_date=biofix_date, budbreak_date=budbreak_date)
+        self.total_pesticide_applied: float = 0.0
+        self.since_last_spray: int = 0
+        self.total_spraying_frequency: int = 0
+        self.beta: float = 0.025
 
         observation_filter = get_observation_set(truncated_observations)
         print(f"Truncated observations is {truncated_observations}")
         self.observation_space = gym.spaces.Dict({
-            name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
+            name: gym.spaces.Box(-np.inf, np.inf, shape=(), dtype=np.float32)
             for name, _ in self.info.items()
             if name in observation_filter
             or "Forecast" in observation_filter
@@ -221,16 +220,17 @@ class AScabEnv(gym.Env):
         ascospore = AscosporeMaturation(pseudothecia, biofix_date=biofix_date)
         lai = LAI(start_date=budbreak_date)
         phenology = Phenology()
-        self.pesticide = Pesticide(growth_diminish_rate_per_hour=0.006)
+        self.pesticide = Pesticide(dilution_rate_per_hour=0.006)
 
         self.models = {type(model).__name__: model for model in [pseudothecia, ascospore, lai, phenology]}
         self.infections = []
         self.discharges = []
 
         self.date = self.dates[0]
-        self.info = {"Date": [], # "SinDay": [], "CosDay": [],
+        self.info = {"Date": [], "DayOfYear": [],
                      **{name: [] for name, _ in self.models.items()},
-                     "Ascospores": [], "Discharge": [], "Infections": [], "Risk": [], "Pesticide": [],
+                     "InfectionWindow": [], "Discharge": [], "Infections": [], "Risk": [], "Pesticide": [],
+                     "ActionHistory": [], "SinceLastAction": [], "AppliedPesticide": [], "Beta": [],
                      **{name: [] for name in WeatherSummary.get_variable_names()},
                      **{
                          f"Forecast_day{day}_{name}": []
@@ -246,7 +246,7 @@ class AScabEnv(gym.Env):
         self.info["Date"].append(self.date)
 
         # encode day into observation with cyclical sin and cos encoding
-        # day_of_year = self.date.timetuple().tm_yday
+        day_of_year = self.date.timetuple().tm_yday
         # self.info.setdefault("SinDay", []).append(np.sin(2 * np.pi * day_of_year / 365.0))
         # self.info.setdefault("CosDay", []).append(np.cos(2 * np.pi * day_of_year / 365.0))
 
@@ -273,15 +273,16 @@ class AScabEnv(gym.Env):
         if isinstance(self.action_space, gym.spaces.Discrete):  # scale from Discrete to 0 to 1
             action = action * 0.05
 
-        self.pesticide.update(df_weather_day=df_weather_day, action=action)
+        self._record_action(action)
 
+        self.pesticide.update(df_weather_day=df_weather_day, action=action)
         lai_value = self.models['LAI'].value
         ascospore_value = self.models['AscosporeMaturation'].value
         time_previous, pat_previous = get_values_last_discharge(self.discharges)
         discharge_date = get_discharge_date(df_weather_day, pat_previous, ascospore_value, time_previous)
 
         self.info['Discharge'].append((discharge_date is not None) * (ascospore_value - pat_previous))
-        self.info['Ascospores'].append(ascospore_value - pat_previous)
+        self.info['InfectionWindow'].append(int(get_pat_threshold() < ascospore_value < 0.99))
         self.info["Action"].append(action)
         self.info["Pesticide"].append(self.pesticide.effective_coverage[-1])
 
@@ -298,10 +299,15 @@ class AScabEnv(gym.Env):
 
         for infection in self.infections:
             infection.progress(df_weather_day, self.pesticide.effective_coverage)
+        self.info['ActionHistory'].append(self.total_spraying_frequency)
+        self.info['SinceLastAction'].append(self.since_last_spray)
+        self.info['AppliedPesticide'].append(self.total_pesticide_applied)
+        self.info['Beta'].append(self.beta)
+        self.info['DayOfYear'].append(day_of_year)
         self.info["Infections"].append(len(self.infections))
         self.info["Risk"].append(get_risk(self.infections, self.date))
         o = self._get_observation()
-        r = self._get_reward()
+        r = self._get_reward(beta=self.beta)
         i = self.get_info()
         self.info["Reward"].append(r)
 
@@ -323,10 +329,10 @@ class AScabEnv(gym.Env):
     def _terminated(self):
         return self.date >= self.dates[1]
 
-    def _get_reward(self):
+    def _get_reward(self, beta: float = 0.025):
         risk = self.info["Risk"][-1]
         action = self.info["Action"][-1]
-        result = -risk - (action * 0.025)
+        result = -risk - (action * beta)
         return float(result)
 
     def render(self):
@@ -341,9 +347,23 @@ class AScabEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        self._reset_action_records()
         self._reset_internal(biofix_date=self.models['AscosporeMaturation'].biofix_date,
                              budbreak_date=self.models['LAI'].start_date)
         return self._get_observation(), self.get_info()
+
+    def _record_action(self, action):
+        if action > 0.0:
+            self.total_spraying_frequency += 1
+            self.total_pesticide_applied +=action
+            self.since_last_spray = 0
+        if action == 0.0:
+            self.since_last_spray += 1
+
+    def _reset_action_records(self):
+        self.total_spraying_frequency = 0
+        self.total_pesticide_applied = 0.0
+        self.since_last_spray = 0
 
 
 class MultipleWeatherASCabEnv(AScabEnv):

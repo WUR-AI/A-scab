@@ -185,7 +185,7 @@ class AScabEnv(gym.Env):
         self.date = self.dates[0]
         self.info = {"Date": [], # "SinDay": [], "CosDay": [],
                      **{name: [] for name, _ in self.models.items()},
-                     "Ascospores": [], "Discharge": [], "Infections": [], "Risk": [], "Pesticide": [],
+                     "InfectionWindow": [], "Discharge": [], "Infections": [], "Risk": [], "Pesticide": [],
                      **{name: [] for name in WeatherSummary.get_variable_names()},
                      **{
                          f"Forecast_day{day}_{name}": []

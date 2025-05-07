@@ -51,6 +51,10 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
                         ax.text(0.015, 0.85, variable, transform=ax.transAxes, verticalalignment="top",horizontalalignment="left",
                                 bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round,pad=0.25'))
                     df['Date'] = df['Date'].apply(lambda d: d.replace(year=2000))  # put all years on top of each other
+                    # Find where the date resets (i.e., next date is earlier than the current one)
+                    date_resets = df['Date'].diff().dt.total_seconds() < 0
+                    reset_indices = date_resets[date_resets].index - 1
+                    df.loc[reset_indices, variable] = np.nan
                     ax.step(df['Date'], df[variable], label=f'{df_key} {reward_string}', where='post', alpha=alpha)
                     if i == (len(variables) - 1):
                         ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=2, frameon=False)
@@ -64,15 +68,6 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
                     if variable == 'HumidDuration':
                         ax.axhline(y=8.0, color="red", linestyle="--")
 
-                    # Add vertical line when the variable first passes the threshold
-                    thresholds = [get_pat_threshold(), 0.99]
-                    if variable == 'AscosporeMaturation' and thresholds is not None:
-                        for threshold in thresholds:
-                            exceeding_indices = df[df[variable] > threshold].index
-                            if len(exceeding_indices) > 0:
-                                first_pass_index = exceeding_indices[0]
-                                x_coordinate = df.loc[first_pass_index, 'Date']  # Get the corresponding date value
-                                ax.axvline(x=x_coordinate, color='red', linestyle='--')
         else:
             # We know there's exactly one DataFrame in results
             df_key, df = next(iter(results.items()))

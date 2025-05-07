@@ -80,8 +80,7 @@ def get_weather_library(
 
 
 def get_default_observations() -> list[str]:
-    result = ['PseudothecialDevelopment', 'AscosporeMaturation', 'Ascospores',
-              'Discharge', 'Infections', 'Risk',
+    result = ['PseudothecialDevelopment', 'InfectionWindow', 'AscosporeMaturation', 'Discharge', 'Infections', 'Risk',
               'LAI', 'Phenology', 'Pesticide',# 'SinDay', 'CosDay'
               ]
     result.extend(WeatherSummary.get_variable_names())
@@ -177,7 +176,7 @@ class AScabEnv(gym.Env):
         ascospore = AscosporeMaturation(pseudothecia, biofix_date=biofix_date)
         lai = LAI(start_date=budbreak_date)
         phenology = Phenology()
-        self.pesticide = Pesticide(growth_diminish_rate_per_hour=0.006)
+        self.pesticide = Pesticide(dilution_rate_per_hour=0.006)
 
         self.models = {type(model).__name__: model for model in [pseudothecia, ascospore, lai, phenology]}
         self.infections = []
@@ -237,7 +236,8 @@ class AScabEnv(gym.Env):
         discharge_date = get_discharge_date(df_weather_day, pat_previous, ascospore_value, time_previous)
 
         self.info['Discharge'].append((discharge_date is not None) * (ascospore_value - pat_previous))
-        self.info['Ascospores'].append(ascospore_value - pat_previous)
+        self.info['Ascospores'].append(ascospore_value)
+        self.info['InfectionWindow'].append(int(get_pat_threshold() < ascospore_value < 0.99))
         self.info["Action"].append(action)
         self.info["Pesticide"].append(self.pesticide.effective_coverage[-1])
 
@@ -385,7 +385,6 @@ class ActionConstrainer(gym.ActionWrapper):
         if self.action_budget > 0:
             action = self.constrain_action_budget(action)
         return action
-
 
     def _constrain_risk_period(self, action):
         if self.unwrapped.models["AscosporeMaturation"].value < get_pat_threshold() or self.unwrapped.models["AscosporeMaturation"].value > 0.99:

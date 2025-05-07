@@ -186,9 +186,9 @@ class AScabEnv(gym.Env):
     def __init__(self, location: tuple[float, float] = get_default_location(), dates: tuple[str, str] = get_default_dates(),
                  weather: pd.DataFrame = None, weather_forecast: dict[int, pd.DataFrame] = None,
                  days_of_forecast: int = get_default_days_of_forecast(),
-                 biofix_date: str = None, budbreak_date: str = get_default_budbreak_date(),
+                 biofix_date: str = "March 10", budbreak_date: str = "March 10",
                  seed: int = 42, verbose: bool = False, discrete_actions: bool = False,
-                 truncated_observations: str = 'full',):
+                 truncated_observations: str = 'truncated',):
         super().reset(seed=seed)
 
         self.seed = seed
@@ -404,10 +404,41 @@ class MultipleWeatherASCabEnv(AScabEnv):
 
 
 class ActionConstrainer(gym.ActionWrapper):
-    def __init__(self, env: AScabEnv):
+    """
+    An action constrainer wrapper to constrain agents timestep-wise or frequency-wise (i.e., action of > 0.0)
+    Use :param risk_period to constrain it only to act in certain timesteps
+    and use :param action_budget to constrain it to act only a limited amount of times per-episode
+    """
+    def __init__(self, env: AScabEnv,
+                 risk_period: bool = False,
+                 action_budget: int = 0,
+
+    ):
         super(ActionConstrainer, self).__init__(env)
+        self.risk_period = risk_period
+        self.action_budget = max(0, int(action_budget))
+        self.actions_left = action_budget
+
+    def reset(self, seed=None, options=None):
+        self.actions_left = self.action_budget
+        return super().reset(seed=seed, options=options)
 
     def action(self, action):
+        if self.risk_period:
+            action = self._constrain_risk_period(action)
+        if self.action_budget > 0:
+            action = self.constrain_action_budget(action)
+        return action
+
+    def _constrain_risk_period(self, action):
         if self.unwrapped.models["AscosporeMaturation"].value < get_pat_threshold() or self.unwrapped.models["AscosporeMaturation"].value > 0.99:
             return action * 0.0
+        return action
+
+    def constrain_action_budget(self, action):
+        if action > 0.0:
+            if self.actions_left > 0:
+                self.actions_left -= 1
+            else:
+                action = 0.0
         return action

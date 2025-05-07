@@ -78,6 +78,50 @@ def get_weather_library(
             )
     return result
 
+def get_weather_library_from_csv(
+        csv_path: str,
+        *,
+        location_col: str = "location",
+        index_col: str = "date",
+):
+    df = pd.read_csv(csv_path, parse_dates=[index_col])
+    if index_col not in df.columns:
+        raise ValueError(f"CSV must contain a '{index_col}' column.")
+    if location_col not in df.columns:
+        raise ValueError(f"CSV must contain a '{location_col}' column.")
+
+    df[index_col] = pd.to_datetime(df[index_col],  utc=True,  errors="coerce")
+    df = df.set_index(index_col).sort_index()
+
+    result = WeatherDataLibrary()
+
+    for loc_id, slice_ in df.groupby(location_col):
+
+        lat = slice_.get("lat")
+        lon = slice_.get("lon")
+        lat = float(lat.iloc[0]) if lat is not None else None
+        lon = float(lon.iloc[0]) if lon is not None else None
+
+        for year, year_df in slice_.groupby(slice_.index.year, sort=False):
+            params = dict(
+                latitude=lat,
+                longitude=lon,
+                start_date=slice_.index.min().strftime("%Y-%m-%d"),
+                end_date=slice_.index.max().strftime("%Y-%m-%d"),
+            )
+
+            key = f"{loc_id}_{params['start_date']}_{params['end_date']}"
+
+            weather_df = year_df.drop(columns=[location_col], errors="ignore")
+
+            result.collect_weather(
+                params,
+                key=key,
+                loaded_weather=weather_df,
+            )
+
+        return result
+
 
 def get_default_observations() -> list[str]:
     result = ['PseudothecialDevelopment', 'InfectionWindow', 'AscosporeMaturation', 'Discharge', 'Infections', 'Risk',
@@ -137,9 +181,9 @@ class AScabEnv(gym.Env):
     def __init__(self, location: tuple[float, float] = get_default_location(), dates: tuple[str, str] = get_default_dates(),
                  weather: pd.DataFrame = None, weather_forecast: dict[int, pd.DataFrame] = None,
                  days_of_forecast: int = get_default_days_of_forecast(),
-                 biofix_date: str = None, budbreak_date: str = get_default_budbreak_date(),
+                 biofix_date: str = "March 10", budbreak_date: str = "March 10",
                  seed: int = 42, verbose: bool = False, discrete_actions: bool = False,
-                 truncated_observations: str = 'full',):
+                 truncated_observations: str = 'truncated',):
         super().reset(seed=seed)
 
         self.seed = seed
@@ -418,4 +462,3 @@ class ActionConstrainer(gym.ActionWrapper):
             else:
                 action = 0.0
         return action
-

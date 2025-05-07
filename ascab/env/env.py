@@ -236,7 +236,6 @@ class AScabEnv(gym.Env):
         discharge_date = get_discharge_date(df_weather_day, pat_previous, ascospore_value, time_previous)
 
         self.info['Discharge'].append((discharge_date is not None) * (ascospore_value - pat_previous))
-        self.info['Ascospores'].append(ascospore_value)
         self.info['InfectionWindow'].append(int(get_pat_threshold() < ascospore_value < 0.99))
         self.info["Action"].append(action)
         self.info["Pesticide"].append(self.pesticide.effective_coverage[-1])

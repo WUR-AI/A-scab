@@ -307,6 +307,7 @@ class RLAgent(BaseAgent):
         normalize: bool = True,
         seed: int = 42,
         continue_training: bool = False,
+        hyperparams: Optional[dict] = None,
     ):
         super().__init__(ascab=ascab_train, render=render)
         self.ascab_train = ascab_train
@@ -319,7 +320,8 @@ class RLAgent(BaseAgent):
         self.algo = rl_algorithm
         self.is_discrete = discrete_actions
         self.continue_training = continue_training
-        self.normalize = normalize
+        self.normalize = normalize,
+        self.hyperparams = hyperparams
 
 
         self.train(seed)
@@ -370,7 +372,7 @@ class RLAgent(BaseAgent):
 
         policy = "MlpPolicy" if self.algo != RecurrentPPO else "MlpLstmPolicy"
         self.model = self.algo(policy, self.ascab_train, verbose=1, seed=seed, tensorboard_log=self.path_log,
-                               **self.algo_hyperparams(self.algo))
+                               **self.algo_hyperparams())
         print(f"Training with seed {seed}...")
         self.model.learn(total_timesteps=self.n_steps, callback=callbacks)
         if self.path_model is not None:
@@ -379,12 +381,13 @@ class RLAgent(BaseAgent):
     def get_action(self, observation: Optional[dict] = None) -> float:
         return self.model.predict(observation, deterministic=True)[0]
 
-    @staticmethod
-    def algo_hyperparams(alg):
+
+    def algo_hyperparams(self):
         # include algorithm specific hyperparams here!
-        return {
-            "gamma": 0.99,
-        }
+        if self.hyperparams is None:
+            return { "gamma": 0.99, }
+        elif self.hyperparams is not None:
+            return self.hyperparams
 
 if __name__ == "__main__":
     ascab_env = MultipleWeatherASCabEnv(

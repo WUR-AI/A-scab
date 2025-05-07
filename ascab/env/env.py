@@ -132,7 +132,7 @@ def get_default_observations() -> list[str]:
 
 
 def get_truncated_observations() -> list[str]:
-    result = ['InfectionWindow', 'Discharge', 'LAI', 'ActionHistory', 'SinceLastAction', 'AppliedPesticide', 'DayOfYear' 'Beta']
+    result = ['InfectionWindow', 'Discharge', 'LAI', 'ActionHistory', 'SinceLastAction', 'AppliedPesticide', 'DayOfYear', 'Beta']
     result.extend(WeatherSummary.get_variable_names())
     result.append("Forecast")
     return result
@@ -431,8 +431,7 @@ class ActionConstrainer(gym.ActionWrapper):
     """
     def __init__(self, env: AScabEnv,
                  risk_period: bool = False,
-                 action_budget: int = 0,
-
+                 action_budget: int = 10,
     ):
         super(ActionConstrainer, self).__init__(env)
         self.risk_period = risk_period

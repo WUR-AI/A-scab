@@ -16,7 +16,9 @@ from ascab.env.env import (
     get_weather_library,
     get_default_start_of_season,
     get_default_end_of_season,
-    ActionConstrainer, get_weather_library_from_csv,
+    ActionConstrainer,
+    EarlyTerminationWrapper,
+    PenaltyWrapper
 )
 from ascab.utils.generic import get_dates
 from ascab.train import RLAgent
@@ -46,34 +48,30 @@ def run_seed(seed: int) -> str:
 
     discrete_algos = ["PPO", "DQN", "RecurrentPPO"]
     algo = PPO
-    constrain = True
+    constrain = False
+    terminate_early = False
+    penalty_wrap = True
     normalize = True
     truncated_observations='truncated'
     log_path = os.path.join(os.getcwd(), "log")
-    name_agent = f"rl_agent_{algo.__name__}_trunc_new_seed{seed}"
+    name_agent = f"rl_agent_{algo.__name__}_trunc_pen_seed{seed}"
     save_path = os.path.join(os.getcwd(), "log", name_agent)
     # os.makedirs(save_path, exist_ok=True)
     save_path = unique_path(save_path)
 
     ascab_train = MultipleWeatherASCabEnv(
-        # weather_data_library=get_weather_library(
-        #     locations=[(42.1620, 3.0924), (42.1620, 3.0), (42.5, 2.5), (41.5, 3.0924), (42.5, 3.0924)],
-        #     dates=get_dates([year for year in range(2016, 2025) if year % 2 == 0],
-        #                     start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season())),
-            weather_data_library=get_weather_library_from_csv(os.path.join(os.path.dirname(os.path.dirname(__file__)), "dataset", 'train.csv')),
-            biofix_date="March 10", budbreak_date="March 10",
-            discrete_actions=True if algo.__name__ in discrete_algos else False,
-            truncated_observations=truncated_observations
+        weather_data_library=get_weather_library(
+            locations=[(42.1620, 3.0924), (42.1620, 3.0), (42.5, 2.5), (41.5, 3.0924), (42.5, 3.0924)],
+            dates=get_dates([year for year in range(2016, 2025) if year % 2 == 0],
+                            start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season())),
+        biofix_date="March 10", budbreak_date="March 10", discrete_actions=True,
         )
     ascab_test = MultipleWeatherASCabEnv(
-        # weather_data_library=get_weather_library(
-        #     locations=[(42.1620, 3.0924)],
-        #     dates=get_dates([year for year in range(2016, 2025) if year % 2 != 0],
-        #                     start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season())),
-        weather_data_library=get_weather_library_from_csv(os.path.join(os.path.dirname(os.path.dirname(__file__)), "dataset", 'val.csv')),
-        biofix_date="March 10", budbreak_date="March 10", mode="sequential",
-        discrete_actions=True if algo.__name__ in discrete_algos else False,
-        truncated_observations=truncated_observations
+        weather_data_library=get_weather_library(
+            locations=[(42.1620, 3.0924)],
+            dates=get_dates([year for year in range(2016, 2025) if year % 2 != 0],
+                            start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season())),
+        biofix_date="March 10", budbreak_date="March 10", discrete_actions=True,
         )
 
     observation_filter = list(ascab_train.observation_space.keys())
@@ -81,6 +79,14 @@ def run_seed(seed: int) -> str:
     if constrain:
         ascab_train = ActionConstrainer(ascab_train, action_budget=8)
         ascab_test = ActionConstrainer(ascab_test, action_budget=8)
+
+    if terminate_early:
+        ascab_train = EarlyTerminationWrapper(ascab_train, penalty=4.0)
+        ascab_test = EarlyTerminationWrapper(ascab_test, penalty=4.0)
+
+    if penalty_wrap:
+        ascab_train = PenaltyWrapper(ascab_train)
+        ascab_test = PenaltyWrapper(ascab_test)
 
     ascab_rl = RLAgent(ascab_train=ascab_train, ascab_test=ascab_test, observation_filter=observation_filter,
                        n_steps=1_000_000, render=False, path_model=save_path, path_log=log_path, rl_algorithm=algo,

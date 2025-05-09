@@ -65,7 +65,7 @@ def main(args):
     pkl_dir = os.path.join(os.path.dirname(this_file_path), 'results')
     pkl_dir_baselines = pkl_dir
     if args.trunc:
-        pkl_dir = os.path.join(os.path.dirname(this_file_path), 'results', 'trunc')
+        pkl_dir = os.path.join(os.path.dirname(this_file_path), 'results', 'new_obs')
     baseline_pickle_names = ['ceres.pkl', 'random.pkl', 'umbrella.pkl', 'zero.pkl']
 
     results_dict = {}
@@ -113,7 +113,7 @@ def main(args):
                 value = baselines_extracted[category][year][i]
                 print(f"           {baseline_name} = {value:.3f}")
 
-    plot_it = False
+    plot_it = True
     if plot_it:
         plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted, plot_type='bar')
         plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted)
@@ -121,7 +121,7 @@ def main(args):
         dict_to_plot = {"Zero":baselines_dict["zero"],
              "Umbrella":baselines_dict["umbrella"],
              "Ceres":baselines_dict["ceres"],
-             "RL":results_dict[list(results_dict.keys())[2]],
+             "RL":results_dict[list(results_dict.keys())[0]],
              "Random":random_dict[next(iter(random_dict))],}
         # for k, v in dict_to_plot.items():
         plot_results(
@@ -149,6 +149,8 @@ def main(args):
         ]
 
         for x in ['Reward', 'Pesticide']:
+
+            print(f'{x} summary')
 
             # Remap baselines['Reward'] lists to dicts keyed by agent
             results['baselines'][x] = {
@@ -214,7 +216,6 @@ def main(args):
             print("IQR (RL - Umbrella):", iqr_umb)
             print("95% CI RL - Umbrella:", (ci_lower_umb, ci_upper_umb))
             print("One sided p-value Umbrella: ", p_one_sided_umb)
-            print("\n")
 
 
             # Gather reward values for each agent
@@ -249,10 +250,10 @@ def main(args):
                     "95% CI Upper": np.percentile(medians_bs, 97.5),
                 })
 
-            print(f'{x} summary')
             df_summary = pd.DataFrame(summary)
 
             print(df_summary)
+            print("\n")
 
 if __name__ == '__main__':
     argparse = argparse.ArgumentParser()

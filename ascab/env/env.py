@@ -1,4 +1,5 @@
 import gymnasium as gym
+from gymnasium.envs.registration import WrapperSpec
 import pandas as pd
 from datetime import datetime, timedelta
 import numpy as np
@@ -132,7 +133,8 @@ def get_default_observations() -> list[str]:
 
 
 def get_truncated_observations() -> list[str]:
-    result = ['InfectionWindow', 'Discharge', 'LAI', 'ActionHistory', 'SinceLastAction', 'AppliedPesticide', 'DayOfYear', 'Beta']
+    result = ['InfectionWindow', 'Discharge', 'LAI', 'ActionHistory', 'SinceLastAction',
+              'AppliedPesticide', 'Beta', 'RemainingSprays']
     result.extend(WeatherSummary.get_variable_names())
     result.append("Forecast")
     return result
@@ -183,7 +185,7 @@ class AScabEnv(gym.Env):
                  days_of_forecast: int = get_default_days_of_forecast(),
                  biofix_date: str = "March 10", budbreak_date: str = "March 10",
                  seed: int = 42, verbose: bool = False, discrete_actions: bool = False,
-                 truncated_observations: str = 'truncated',):
+                 truncated_observations: str = 'truncated', action_budget: int = 8):
         super().reset(seed=seed)
 
         self.seed = seed
@@ -195,12 +197,14 @@ class AScabEnv(gym.Env):
         self.total_pesticide_applied: float = 0.0
         self.since_last_spray: int = 0
         self.total_spraying_frequency: int = 0
+        self.spray_budget: int = max(6, int(action_budget))
+        self.remaining_sprays: int = self.spray_budget
         self.beta: float = 0.025
 
         observation_filter = get_observation_set(truncated_observations)
-        print(f"Truncated observations is {truncated_observations}")
+
         self.observation_space = gym.spaces.Dict({
-            name: gym.spaces.Box(-np.inf, np.inf, shape=(), dtype=np.float32)
+            name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
             for name, _ in self.info.items()
             if name in observation_filter
             or "Forecast" in observation_filter
@@ -230,12 +234,12 @@ class AScabEnv(gym.Env):
         self.info = {"Date": [], "DayOfYear": [],
                      **{name: [] for name, _ in self.models.items()},
                      "InfectionWindow": [], "Discharge": [], "Infections": [], "Risk": [], "Pesticide": [],
-                     "ActionHistory": [], "SinceLastAction": [], "AppliedPesticide": [], "Beta": [],
+                     "ActionHistory": [], "SinceLastAction": [], "AppliedPesticide": [], "RemainingSprays": [], "Beta": [],
                      **{name: [] for name in WeatherSummary.get_variable_names()},
                      **{
                          f"Forecast_day{day}_{name}": []
                          for name in WeatherSummary.get_variable_names()
-                         for day in range(1, self._get_days_of_forecast()+1)
+                         for day in range(1, self._get_days_of_forecast() + 1)
                      },
                      "Action": [], "Reward": []}
 
@@ -302,6 +306,7 @@ class AScabEnv(gym.Env):
         self.info['ActionHistory'].append(self.total_spraying_frequency)
         self.info['SinceLastAction'].append(self.since_last_spray)
         self.info['AppliedPesticide'].append(self.total_pesticide_applied)
+        self.info['RemainingSprays'].append(self.remaining_sprays)
         self.info['Beta'].append(self.beta)
         self.info['DayOfYear'].append(day_of_year)
         self.info["Infections"].append(len(self.infections))
@@ -355,8 +360,10 @@ class AScabEnv(gym.Env):
     def _record_action(self, action):
         if action > 0.0:
             self.total_spraying_frequency += 1
-            self.total_pesticide_applied +=action
+            self.total_pesticide_applied += action
             self.since_last_spray = 0
+            self.remaining_sprays -= 1
+            self.remaining_sprays = max(0, self.remaining_sprays)
         if action == 0.0:
             self.since_last_spray += 1
 
@@ -364,6 +371,7 @@ class AScabEnv(gym.Env):
         self.total_spraying_frequency = 0
         self.total_pesticide_applied = 0.0
         self.since_last_spray = 0
+        self.remaining_sprays = self.spray_budget
 
 
 class MultipleWeatherASCabEnv(AScabEnv):
@@ -429,10 +437,11 @@ class ActionConstrainer(gym.ActionWrapper):
     Use :param risk_period to constrain it only to act in certain timesteps
     and use :param action_budget to constrain it to act only a limited amount of times per-episode
     """
+
     def __init__(self, env: AScabEnv,
                  risk_period: bool = False,
-                 action_budget: int = 10,
-    ):
+                 action_budget: int = 0,
+                 ):
         super(ActionConstrainer, self).__init__(env)
         self.risk_period = risk_period
         self.action_budget = max(0, int(action_budget))
@@ -461,3 +470,75 @@ class ActionConstrainer(gym.ActionWrapper):
             else:
                 action = 0.0
         return action
+
+    @classmethod
+    def wrapper_spec(cls, **kwargs):
+        # helper to build a WrapperSpec on‑the‑fly
+        return WrapperSpec(
+            name=cls.__name__,
+            entry_point=f"{cls.__module__}:{cls.__name__}",
+            kwargs=kwargs or None,  # needs EzPickle if you keep kwargs
+        )
+
+
+class EarlyTerminationWrapper(gym.Wrapper):
+    def __init__(self,
+                 env: AScabEnv,
+                 max_actions: int = 8,
+                 penalty: float = 0.0,
+                 ):
+        super(EarlyTerminationWrapper, self).__init__(env)
+        self.max_actions = max_actions
+        self.actions_done = 0
+        self.penalty = penalty
+
+    def step(self, action):
+        if action > 0.0:
+            self.actions_done += 1
+
+        obs, reward, terminated, truncated, info = self.env.step(action)
+
+        if not terminated and self.actions_done > self.max_actions:
+            truncated = True
+            if self.penalty > 0.0:
+                reward -= self.penalty
+
+        return obs, reward, terminated, truncated, info
+
+    def reset(self, *args, **kwargs):
+        self.actions_done = 0
+        return super().reset(*args, **kwargs)
+
+
+class PenaltyWrapper(gym.RewardWrapper):
+    def __init__(self,
+                 env: AScabEnv,
+                 penalty: float = 0.1,
+                 ):
+        super(PenaltyWrapper, self).__init__(env)
+        self.penalty = max(0.0, penalty)
+
+    def step(self, action):
+
+        obs, reward, terminated, truncated, info = self.env.step(action)
+
+        if not terminated and self.env.unwrapped.remaining_sprays <= 1:
+            if self.penalty > 0.0:
+                reward -= self.penalty
+
+        return obs, reward, terminated, truncated, info
+
+    def reset(self, *args, **kwargs):
+        self.actions_done = 0
+        return super().reset(*args, **kwargs)
+
+    @classmethod
+    def wrapper_spec(cls, **kwargs):
+        # helper to build a WrapperSpec on‑the‑fly
+        return WrapperSpec(
+            name=cls.__name__,
+            entry_point=f"{cls.__module__}:{cls.__name__}",
+            kwargs=kwargs or None,  # needs EzPickle if you keep kwargs
+        )
+
+

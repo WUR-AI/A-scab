@@ -503,7 +503,7 @@ class EarlyTerminationWrapper(gym.Wrapper):
 class PenaltyWrapper(gym.RewardWrapper):
     def __init__(self,
                  env: AScabEnv,
-                 penalty: float = 0.5,
+                 penalty: float = 0.1,
     ):
         super(PenaltyWrapper, self).__init__(env)
         self.penalty = max(0.0, penalty)

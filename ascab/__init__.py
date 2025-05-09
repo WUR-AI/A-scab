@@ -71,6 +71,7 @@ def _register_ascab_env(dataset: str = 'train',
             "budbreak_date": "March 10",
             "discrete_actions": is_discrete,
             "truncated_observations": "truncated",
+            "mode": 'sequential' if dataset == 'val' else 'random',
         },
         additional_wrappers=_wrapper_picker(wrapper=use_wrapper),
     )

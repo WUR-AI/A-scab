@@ -3,7 +3,12 @@ import numpy as np
 import pandas as pd
 import pickle
 import argparse
-import torch as th
+
+try:
+    import comet_ml
+    use_comet = True
+except ImportError:
+    use_comet = False
 
 import gymnasium as gym
 
@@ -22,9 +27,11 @@ from ascab.env.env import (
 )
 from ascab.utils.generic import get_dates
 from ascab.train import RLAgent
+from ascab.utils.plot import plot_results
+
 
 from stable_baselines3 import PPO
-from sb3_contrib import RecurrentPPO
+from sb3_contrib import RecurrentPPO, CrossQ
 
 def unique_path(path: str) -> str:
     """
@@ -50,11 +57,11 @@ def run_seed(seed: int) -> str:
     algo = PPO
     constrain = False
     terminate_early = False
-    penalty_wrap = True
+    penalty_wrap = False
     normalize = True
     truncated_observations='truncated'
     log_path = os.path.join(os.getcwd(), "log")
-    name_agent = f"rl_agent_{algo.__name__}_trunc_pen_seed{seed}"
+    name_agent = f"rl_agent_{algo.__name__}_trunc_bud_seed{seed}"
     save_path = os.path.join(os.getcwd(), "log", name_agent)
     # os.makedirs(save_path, exist_ok=True)
     save_path = unique_path(save_path)
@@ -64,14 +71,14 @@ def run_seed(seed: int) -> str:
             locations=[(42.1620, 3.0924), (42.1620, 3.0), (42.5, 2.5), (41.5, 3.0924), (42.5, 3.0924)],
             dates=get_dates([year for year in range(2016, 2025) if year % 2 == 0],
                             start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season())),
-        biofix_date="March 10", budbreak_date="March 10", discrete_actions=True,
+        biofix_date="March 10", budbreak_date="March 10", discrete_actions=True if algo.__name__ in discrete_algos else False,
         )
     ascab_test = MultipleWeatherASCabEnv(
         weather_data_library=get_weather_library(
             locations=[(42.1620, 3.0924)],
             dates=get_dates([year for year in range(2016, 2025) if year % 2 != 0],
                             start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season())),
-        biofix_date="March 10", budbreak_date="March 10", discrete_actions=True,
+        biofix_date="March 10", budbreak_date="March 10", discrete_actions=True if algo.__name__ in discrete_algos else False, mode='sequential'
         )
 
     observation_filter = list(ascab_train.observation_space.keys())
@@ -81,12 +88,12 @@ def run_seed(seed: int) -> str:
         ascab_test = ActionConstrainer(ascab_test, action_budget=8)
 
     if terminate_early:
-        ascab_train = EarlyTerminationWrapper(ascab_train, penalty=4.0)
-        ascab_test = EarlyTerminationWrapper(ascab_test, penalty=4.0)
+        ascab_train = EarlyTerminationWrapper(ascab_train, penalty=1.0)
+        ascab_test = EarlyTerminationWrapper(ascab_test, penalty=1.0)
 
     if penalty_wrap:
-        ascab_train = PenaltyWrapper(ascab_train)
-        ascab_test = PenaltyWrapper(ascab_test)
+        ascab_train = PenaltyWrapper(ascab_train, penalty=0.05)
+        ascab_test = PenaltyWrapper(ascab_test, penalty=0.05)
 
     ascab_rl = RLAgent(ascab_train=ascab_train, ascab_test=ascab_test, observation_filter=observation_filter,
                        n_steps=1_000_000, render=False, path_model=save_path, path_log=log_path, rl_algorithm=algo,
@@ -99,6 +106,32 @@ def run_seed(seed: int) -> str:
 
     with open(save_path+".pkl", "wb") as f:
         pickle.dump(results, file=f)
+
+    plot_results(
+        {"rl_agent": results},
+        variables=[
+            "Precipitation",
+            "AscosporeMaturation",
+            "Discharge",
+            "Pesticide",
+            "Risk",
+            "Action",
+        ],
+        save_path=os.path.join(save_path),
+        per_year=True,
+    )
+
+    if use_comet:
+        ascab_rl.comet.log_asset(file_data=os.path.join(save_path+".pkl"),
+                                 file_name=f'{seed}-results')
+        ascab_rl.comet.log_asset(file_data=os.path.join(save_path + "_norm.pkl"),
+                                 file_name=f'{seed}-norm_stats')
+        ascab_rl.comet.log_asset(file_data=os.path.join(save_path + ".zip"),
+                                 file_name=f'{seed}-model')
+        for year in ["2017", "2019", "2021", "2023"]:
+            name_plot = f"plot_{year}.png"
+            ascab_rl.comet.log_asset(file_data=os.path.join(save_path, name_plot),
+                                     file_name=name_plot)
 
     return save_path
 

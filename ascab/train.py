@@ -7,19 +7,34 @@ from typing import Optional, Dict, Any, Union, Type
 from scipy.optimize import basinhopping, Bounds
 import numpy as np
 
+import gymnasium
 from gymnasium.wrappers import FlattenObservation, FilterObservation
+from gymnasium import Wrapper
+from stable_baselines3.common.env_util import make_vec_env
 
 from ascab.utils.plot import plot_results
 from ascab.utils.generic import get_dates
-from ascab.env.env import AScabEnv, MultipleWeatherASCabEnv, ActionConstrainer, get_weather_library, get_default_start_of_season, get_default_end_of_season
+from ascab.env.env import AScabEnv, MultipleWeatherASCabEnv, ActionConstrainer, get_weather_library, get_default_start_of_season, get_default_end_of_season, PenaltyWrapper
 
-import torch as th
+try:
+    from comet_ml import Experiment
+    from comet_ml.integration.gymnasium import CometLogger
+    use_comet = True
+except ImportError:
+    use_comet = False
+
+try:
+    import torch as th
+    import tensorboard
+except ImportError:
+    use_tensorboard = False
+
 
 try:
     from stable_baselines3 import PPO, SAC, TD3, DQN, HER
     from stable_baselines3.common.callbacks import EvalCallback, BaseCallback
     from stable_baselines3.common.monitor import Monitor
-    from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+    from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize, SubprocVecEnv
 except ImportError:
     PPO = None
 
@@ -291,6 +306,13 @@ class CustomEvalCallback(EvalCallback):
             print(f'{tag}: {np.sum(info["Reward"])}')
             self.training_env.save(os.path.join(self.best_model_save_path+"_norm.pkl"))
 
+def is_wrapped(env, wrapper_cls) -> bool:
+    """Return True iff *env* (possibly deep‑inside) is an instance of *wrapper_cls*."""
+    while isinstance(env, Wrapper):
+        if isinstance(env, wrapper_cls):
+            return True
+        env = env.env                      # peel one wrapper layer
+    return False
 
 class RLAgent(BaseAgent):
     def __init__(
@@ -307,6 +329,7 @@ class RLAgent(BaseAgent):
         normalize: bool = True,
         seed: int = 42,
         continue_training: bool = False,
+        hyperparams: dict = {},
     ):
         super().__init__(ascab=ascab_train, render=render)
         self.ascab_train = ascab_train
@@ -320,6 +343,11 @@ class RLAgent(BaseAgent):
         self.is_discrete = discrete_actions
         self.continue_training = continue_training
         self.normalize = normalize
+        self.hyperparams = hyperparams
+        self.seed = seed
+
+        if use_comet:
+            self.comet = None
 
 
         self.train(seed)
@@ -353,10 +381,15 @@ class RLAgent(BaseAgent):
         else:
 
             self.ascab = Monitor(self.ascab)
+
+            use_comet = True
+            if use_comet:
+                self.comet_logging()
+
             if self.normalize:
                 self.ascab_train = VecNormalize(DummyVecEnv([lambda: self.ascab_train]), norm_obs=True,
-                                                norm_reward=False)
-                self.ascab = VecNormalize(DummyVecEnv([lambda: self.ascab]), norm_obs=True, norm_reward=False,
+                                                norm_reward=False if not is_wrapped(self.ascab_train, PenaltyWrapper) else True)
+                self.ascab = VecNormalize(DummyVecEnv([lambda: self.ascab]), norm_obs=True, norm_reward=False if not is_wrapped(self.ascab_train, PenaltyWrapper) else True,
                                           training=False)
             eval_callback = CustomEvalCallback(
                 eval_env=self.ascab,
@@ -384,7 +417,57 @@ class RLAgent(BaseAgent):
         # include algorithm specific hyperparams here!
         return {
             "gamma": 0.99,
+            # "batch_size": 271,
+            # "n_steps": 2168,
+            # "learning_rate": 0.001,
+            # "ent_coef": 0.01,
+            "policy_kwargs": {
+                "ortho_init": False,
+                # "net_arch":
+                #     {"pi": [128, 128],
+                #      "vf": [128, 128],
+                #      "cf": [128, 128],}
+            },
         }
+
+    def comet_logging(self):
+        rootdir = os.path.dirname(os.path.dirname(__file__))
+        with open(os.path.join(rootdir, 'comet_key', 'comet_key'), 'r') as f:
+            api_key = f.readline()
+        comet_log = Experiment(
+            api_key=api_key,
+            project_name="paper_experiments",
+            workspace="ascabgym",
+            log_code=True,
+            log_graph=True,
+            auto_metric_logging=True,
+            auto_histogram_tensorboard_logging=True
+        )
+        comet_log.log_code(folder=os.path.join(rootdir, 'ascab'))
+        comet_log.log_parameters(self.hyperparams)
+
+        obs_space = self.ascab_train.unwrapped.observation_space
+        act_space = self.ascab_train.unwrapped.action_space
+        exp_params = {
+            "obs/type": type(obs_space).__name__,
+            "obs/shape": getattr(obs_space, "shape", None),
+            "obs": obs_space,
+            "act/type": type(act_space).__name__,
+            "act/shape": getattr(act_space, "shape", None),
+            "act": act_space,
+        }
+        if isinstance(obs_space, gymnasium.spaces.Box):
+            exp_params.update({
+                "obs/low_min": float(obs_space.low.min()),
+                "obs/high_max": float(obs_space.high.max())
+            })
+        comet_log.log_parameters(exp_params)
+
+        comet_log.set_name(f'{self.algo.__name__}-{self.seed}')
+
+        self.ascab_train = CometLogger(self.ascab_train, comet_log)
+        self.comet = comet_log
+        print("Using Comet!")
 
 if __name__ == "__main__":
     ascab_env = MultipleWeatherASCabEnv(

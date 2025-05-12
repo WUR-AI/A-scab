@@ -132,8 +132,18 @@ def get_default_observations() -> list[str]:
 
 
 def get_truncated_observations() -> list[str]:
-    result = ['InfectionWindow', 'Discharge', 'LAI', 'ActionHistory', 'SinceLastAction',
-              'AppliedPesticide', 'Beta', 'RemainingSprays']
+    result = [
+              # 'PseudothecialDevelopment',
+              'InfectionWindow',
+              'Discharge',
+              'LAI',
+              # 'Pesticide',
+              'ActionHistory',
+              # 'SinceLastAction',
+              'AppliedPesticide',
+              'Beta',
+              'RemainingSprays'
+              ]
     result.extend(WeatherSummary.get_variable_names())
     result.append("Forecast")
     return result
@@ -203,7 +213,7 @@ class AScabEnv(gym.Env):
         observation_filter = get_observation_set(truncated_observations)
         print(f"Truncated observations is {truncated_observations}")
         self.observation_space = gym.spaces.Dict({
-            name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
+            name: gym.spaces.Box(-np.inf, np.inf, shape=(), dtype=np.float32)
             for name, _ in self.info.items()
             if name in observation_filter
             or "Forecast" in observation_filter
@@ -212,7 +222,7 @@ class AScabEnv(gym.Env):
         self.is_discrete = discrete_actions
         self.action_space = gym.spaces.Box(0, 1.0, shape=(), dtype=np.float32) \
                             if not self.is_discrete \
-                            else gym.spaces.Discrete(21)  # Discretize to bins of 0.05
+                            else gym.spaces.Discrete(6)  # Discretize to bins of 0.05
         self.render_mode = 'human'
 
     def _get_days_of_forecast(self):
@@ -274,7 +284,7 @@ class AScabEnv(gym.Env):
 
         # apply pesticide
         if isinstance(self.action_space, gym.spaces.Discrete):  # scale from Discrete to 0 to 1
-            action = action * 0.05
+            action = action / (self.action_space.n - 1)
 
         self._record_action(action)
 

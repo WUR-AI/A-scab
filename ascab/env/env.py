@@ -213,7 +213,7 @@ class AScabEnv(gym.Env):
         self.is_discrete = discrete_actions
         self.action_space = gym.spaces.Box(0, 1.0, shape=(), dtype=np.float32) \
                             if not self.is_discrete \
-                            else gym.spaces.Discrete(21)  # Discretize to bins of 0.05
+                            else gym.spaces.Discrete(6)  # Discretize to bins of 0.05
         self.render_mode = 'human'
 
     def _get_days_of_forecast(self):
@@ -275,7 +275,7 @@ class AScabEnv(gym.Env):
 
         # apply pesticide
         if isinstance(self.action_space, gym.spaces.Discrete):  # scale from Discrete to 0 to 1
-            action = action * 0.05
+            action = action / (self.action_space.n - 1)
 
         self._record_action(action)
 

@@ -9,7 +9,7 @@ from .env.env import MultipleWeatherASCabEnv, PenaltyWrapper, ActionConstrainer,
 #     biofix_date="March 10",
 #     budbreak_date="March 10",
 #     discrete_actions=True,
-#     truncated_observations='truncated'
+#     truncated_observations='truncated',
 # ))
 
 def _wrapper_picker(wrapper):
@@ -54,11 +54,11 @@ def _register_ascab_env(dataset: str = 'train',
     str_dataset = dataset.title()
 
     if use_wrapper == "ConditionalAgents":
-        str_use_wrapper = "-NonRLNoPenalty"
+        str_use_wrapper = "-NonRL"
     elif use_wrapper == "Penalty":
         str_use_wrapper = "-Pen"
     elif use_wrapper == "ConditionalAgentsPenalty":
-        str_use_wrapper = "-NonRL"
+        str_use_wrapper = "-NonRLPen"
     else:
         str_use_wrapper = ""
 
@@ -76,7 +76,9 @@ def _register_ascab_env(dataset: str = 'train',
         additional_wrappers=_wrapper_picker(wrapper=use_wrapper),
     )
 
+print(f"Please wait a few seconds; importing the AscabGym modules...")
 for data in ['train', 'val']:
     for discrete in [True, False]:
-        for wrapper in [None, 'Penalty', 'ConditionalAgentsPenalty', 'ConditionalAgents']:
+        for wrapper in [None, 'ConditionalAgents']:
             _register_ascab_env(dataset=data, is_discrete=discrete, use_wrapper=wrapper)
+print(f"Imported successfully!")

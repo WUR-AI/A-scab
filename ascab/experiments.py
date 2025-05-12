@@ -56,24 +56,16 @@ def run_seed(seed: int) -> str:
     save_path = unique_path(save_path)
 
     ascab_train = MultipleWeatherASCabEnv(
-        # weather_data_library=get_weather_library(
-        #     locations=[(42.1620, 3.0924), (42.1620, 3.0), (42.5, 2.5), (41.5, 3.0924), (42.5, 3.0924)],
-        #     dates=get_dates([year for year in range(2016, 2025) if year % 2 == 0],
-        #                     start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season())),
             weather_data_library=get_weather_library_from_csv(os.path.join(os.path.dirname(os.path.dirname(__file__)), "dataset", 'train.csv')),
             biofix_date="March 10", budbreak_date="March 10",
             discrete_actions=True if algo.__name__ in discrete_algos else False,
             truncated_observations=truncated_observations
         )
     ascab_test = MultipleWeatherASCabEnv(
-        # weather_data_library=get_weather_library(
-        #     locations=[(42.1620, 3.0924)],
-        #     dates=get_dates([year for year in range(2016, 2025) if year % 2 != 0],
-        #                     start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season())),
         weather_data_library=get_weather_library_from_csv(os.path.join(os.path.dirname(os.path.dirname(__file__)), "dataset", 'val.csv')),
         biofix_date="March 10", budbreak_date="March 10", mode="sequential",
         discrete_actions=True if algo.__name__ in discrete_algos else False,
-        truncated_observations=truncated_observations
+        truncated_observations=truncated_observations,
         )
 
     observation_filter = list(ascab_train.observation_space.keys())

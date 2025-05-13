@@ -30,8 +30,10 @@ from ascab.train import RLAgent
 from ascab.utils.plot import plot_results
 
 
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO, DQN
 from sb3_contrib import RecurrentPPO, CrossQ
+
+from ascab.agent.ppo_lagrangian import LagrangianPPO
 
 def unique_path(path: str) -> str:
     """
@@ -49,12 +51,12 @@ def unique_path(path: str) -> str:
 
     return candidate
 
-def run_seed(seed: int) -> str:
+def run_seed(seed: int, algo = PPO) -> str:
     print("rl agent")
     print("seed:", seed)
 
-    discrete_algos = ["PPO", "DQN", "RecurrentPPO"]
-    algo = PPO
+    discrete_algos = ["PPO", "DQN", "RecurrentPPO", "LagrangianPPO"]
+    # algo = PPO
     constrain = False
     terminate_early = False
     penalty_wrap = False
@@ -135,11 +137,26 @@ def run_seed(seed: int) -> str:
 
     return save_path
 
+def agent_picker(agent):
+    if agent == "PPO":
+        return PPO
+    elif agent == "LagrangianPPO":
+        return LagrangianPPO
+    elif agent == "RecurrentPPO":
+        return RecurrentPPO
+    elif agent == "DQN":
+        return DQN
+    elif agent == "CrossQ":
+        return CrossQ
+    else:
+        raise ValueError("Unknown agent! Please input supported algorithm")
+
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--seed", type=int, default=42)
     argparser.add_argument("--multiprocess", type=bool, default=False)
+    argparser.add_argument("--agent", type=str, default="PPO")
     args = argparser.parse_args()
     rng= np.random.default_rng()
     random_int = rng.integers(low=0, high=1_000_000, size=1)[0]
-    run_seed(int(args.seed))
+    run_seed(int(args.seed), agent_picker(args.agent))

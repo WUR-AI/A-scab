@@ -447,7 +447,7 @@ class ActionConstrainer(gym.ActionWrapper):
     and use :param action_budget to constrain it to act only a limited amount of times per-episode
     """
     def __init__(self, env: AScabEnv,
-                 risk_period: bool = False,
+                 risk_period: bool = True,
                  action_budget: int = 0,
 
     ):

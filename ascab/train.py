@@ -16,6 +16,8 @@ from ascab.utils.plot import plot_results
 from ascab.utils.generic import get_dates
 from ascab.env.env import AScabEnv, MultipleWeatherASCabEnv, ActionConstrainer, get_weather_library, get_default_start_of_season, get_default_end_of_season, PenaltyWrapper
 
+from ascab.agent.ppo_lagrangian import LagrangianPPO, CostActorCriticPolicy, max_action_constraint
+
 try:
     from comet_ml import Experiment
     from comet_ml.integration.gymnasium import CometLogger
@@ -402,8 +404,9 @@ class RLAgent(BaseAgent):
             callbacks.append(eval_callback)
 
         policy = "MlpPolicy" if self.algo != RecurrentPPO else "MlpLstmPolicy"
+        policy = CostActorCriticPolicy if self.algo == LagrangianPPO else policy
         self.model = self.algo(policy, self.ascab_train, verbose=1, seed=seed, tensorboard_log=self.path_log,
-                               **self.algo_hyperparams(self.algo))
+                               **self.algo_hyperparams(self.algo), **self.lag_ppo())
         print(f"Training with seed {seed}...")
         self.model.learn(total_timesteps=self.n_steps, callback=callbacks)
         if self.path_model is not None:
@@ -412,6 +415,9 @@ class RLAgent(BaseAgent):
     def get_action(self, observation: Optional[dict] = None) -> float:
         return self.model.predict(observation, deterministic=True)[0]
 
+    def lag_ppo(self):
+        return {"constraint_fn": max_action_constraint} if self.algo == LagrangianPPO else {}
+
     @staticmethod
     def algo_hyperparams(alg):
         # include algorithm specific hyperparams here!
@@ -419,7 +425,7 @@ class RLAgent(BaseAgent):
             "gamma": 0.99,
             # "batch_size": 271,
             # "n_steps": 2168,
-            # "learning_rate": 0.001,
+            "learning_rate": 0.001,
             # "ent_coef": 0.01,
             "policy_kwargs": {
                 "ortho_init": False,
@@ -449,18 +455,9 @@ class RLAgent(BaseAgent):
         obs_space = self.ascab_train.unwrapped.observation_space
         act_space = self.ascab_train.unwrapped.action_space
         exp_params = {
-            "obs/type": type(obs_space).__name__,
-            "obs/shape": getattr(obs_space, "shape", None),
             "obs": obs_space,
-            "act/type": type(act_space).__name__,
-            "act/shape": getattr(act_space, "shape", None),
             "act": act_space,
         }
-        if isinstance(obs_space, gymnasium.spaces.Box):
-            exp_params.update({
-                "obs/low_min": float(obs_space.low.min()),
-                "obs/high_max": float(obs_space.high.max())
-            })
         comet_log.log_parameters(exp_params)
 
         comet_log.set_name(f'{self.algo.__name__}-{self.seed}')

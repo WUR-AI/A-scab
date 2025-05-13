@@ -31,7 +31,8 @@ from ascab.utils.plot import plot_results
 
 
 from stable_baselines3 import PPO, DQN
-from sb3_contrib import RecurrentPPO, CrossQ
+from sb3_contrib import RecurrentPPO, CrossQ, MaskablePPO
+from sb3_contrib.common.wrappers import ActionMasker
 
 from ascab.agent.ppo_lagrangian import LagrangianPPO
 
@@ -55,7 +56,9 @@ def run_seed(seed: int, algo = PPO) -> str:
     print("rl agent")
     print("seed:", seed)
 
-    discrete_algos = ["PPO", "DQN", "RecurrentPPO", "LagrangianPPO"]
+    print(f"Using {algo.__name__}")
+
+    discrete_algos = ["PPO", "DQN", "RecurrentPPO", "LagrangianPPO", "MaskablePPO"]
     # algo = PPO
     constrain = False
     terminate_early = False
@@ -97,8 +100,12 @@ def run_seed(seed: int, algo = PPO) -> str:
         ascab_train = PenaltyWrapper(ascab_train, penalty=0.05)
         ascab_test = PenaltyWrapper(ascab_test, penalty=0.05)
 
+    if algo == MaskablePPO:
+        ascab_train = ActionMasker(ascab_train, lambda e: e.remaining_sprays_masker())
+        ascab_test = ActionMasker(ascab_test, lambda e: e.remaining_sprays_masker())
+
     ascab_rl = RLAgent(ascab_train=ascab_train, ascab_test=ascab_test, observation_filter=observation_filter,
-                       n_steps=1_000_000, render=False, path_model=save_path, path_log=log_path, rl_algorithm=algo,
+                       n_steps=1_000_000 if algo != MaskablePPO else 300_000, render=False, path_model=save_path, path_log=log_path, rl_algorithm=algo,
                        seed=seed, normalize=normalize)
     print(ascab_train.histogram)
     print(ascab_test.histogram)
@@ -148,6 +155,8 @@ def agent_picker(agent):
         return DQN
     elif agent == "CrossQ":
         return CrossQ
+    elif agent == "MaskablePPO":
+        return MaskablePPO
     else:
         raise ValueError("Unknown agent! Please input supported algorithm")
 

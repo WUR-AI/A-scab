@@ -41,9 +41,11 @@ except ImportError:
     PPO = None
 
 try:
-    from sb3_contrib import RecurrentPPO
+    from sb3_contrib import RecurrentPPO, MaskablePPO
+    from sb3_contrib.common.maskable.callbacks import MaskableEvalCallback
 except ImportError:
     RecurrentPPO = None
+    MaskablePPO = None
 
 class BaseAgent(abc.ABC):
     def __init__(self, ascab: Optional[AScabEnv] = None, render: bool = True):
@@ -308,6 +310,21 @@ class CustomEvalCallback(EvalCallback):
             print(f'{tag}: {np.sum(info["Reward"])}')
             self.training_env.save(os.path.join(self.best_model_save_path+"_norm.pkl"))
 
+
+class CustomMaskableEvalCallback(MaskableEvalCallback):
+    def __init__(self, *args, **kwargs):
+        super(CustomMaskableEvalCallback, self).__init__(*args, **kwargs)
+
+    def _log_success_callback(self, locals_: Dict[str, Any], globals_: Dict[str, Any]) -> None:
+        if locals_["done"]:
+            info = locals_["info"]
+            tag = info["Date"][0].year
+            for cum_var in ["Action", "Reward"]:
+                self.logger.record(f"eval/{tag}-sum_{cum_var}", float(np.sum(info[cum_var])))
+            print(f'{tag}: {np.sum(info["Reward"])}')
+            self.training_env.save(os.path.join(self.best_model_save_path+"_norm.pkl"))
+
+
 def is_wrapped(env, wrapper_cls) -> bool:
     """Return True iff *env* (possibly deep‑inside) is an instance of *wrapper_cls*."""
     while isinstance(env, Wrapper):
@@ -400,6 +417,13 @@ class RLAgent(BaseAgent):
                 render=False,
                 n_eval_episodes=len(self.ascab.weather_keys) if hasattr(self.ascab, "weather_keys") else 1,
                 best_model_save_path=self.path_model,
+            ) if self.algo != MaskablePPO else CustomMaskableEvalCallback(
+                eval_env=self.ascab,
+                eval_freq=1500,
+                deterministic=True,
+                render=False,
+                n_eval_episodes=len(self.ascab.weather_keys) if hasattr(self.ascab, "weather_keys") else 1,
+                best_model_save_path=self.path_model,
             )
             callbacks.append(eval_callback)
 
@@ -413,7 +437,11 @@ class RLAgent(BaseAgent):
             self.model.save(self.path_model)
 
     def get_action(self, observation: Optional[dict] = None) -> float:
-        return self.model.predict(observation, deterministic=True)[0]
+        if self.algo == MaskablePPO:
+            action_mask = self.ascab.remaining_sprays_masker()
+            return self.model.predict(observation, action_mask=action_mask)
+        else:
+            return self.model.predict(observation, deterministic=True)[0]
 
     def lag_ppo(self):
         return {"constraint_fn": max_action_constraint} if self.algo == LagrangianPPO else {}

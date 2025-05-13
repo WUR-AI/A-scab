@@ -382,6 +382,12 @@ class AScabEnv(gym.Env):
         self.since_last_spray = 0
         self.remaining_sprays = self.spray_budget
 
+    def remaining_sprays_masker(self) -> np.ndarray:
+        mask = np.ones(self.action_space.n, dtype=np.bool_)
+        if self.remaining_sprays <= 0:
+            mask[1:] = False
+        return mask
+
 
 class MultipleWeatherASCabEnv(AScabEnv):
     def __init__(self,

@@ -47,6 +47,12 @@ except ImportError:
     RecurrentPPO = None
     MaskablePPO = None
 
+try:
+    from rllte.xplore.reward import E3B
+    irs_algo = E3B
+except ImportError:
+    irs_algo = None
+
 class BaseAgent(abc.ABC):
     def __init__(self, ascab: Optional[AScabEnv] = None, render: bool = True):
         self.ascab = ascab or AScabEnv()
@@ -325,6 +331,61 @@ class CustomMaskableEvalCallback(MaskableEvalCallback):
             self.training_env.save(os.path.join(self.best_model_save_path+"_norm.pkl"))
 
 
+class IntrinsicRewardCallback(BaseCallback):
+    """
+    A custom callback for combining RLeXplore and on-policy algorithms from SB3.
+    """
+    def __init__(self, irs, verbose=0):
+        super(IntrinsicRewardCallback, self).__init__(verbose)
+        self.irs = irs
+        self.buffer = None
+
+    def init_callback(self, model) -> None:
+        super().init_callback(model)
+        self.buffer = self.model.rollout_buffer
+
+    def _on_step(self) -> bool:
+        """
+        This method will be called by the model after each call to `env.step()`.
+
+        :return: (bool) If the callback returns False, training is aborted early.
+        """
+        observations = self.locals["obs_tensor"]
+        device = observations.device
+        actions = th.as_tensor(self.locals["actions"], device=device)
+        rewards = th.as_tensor(self.locals["rewards"], device=device)
+        dones = th.as_tensor(self.locals["dones"], device=device)
+        next_observations = th.as_tensor(self.locals["new_obs"], device=device)
+
+        # ===================== watch the interaction ===================== #
+        self.irs.watch(observations, actions, rewards, dones, dones, next_observations)
+        # ===================== watch the interaction ===================== #
+        return True
+
+    def _on_rollout_end(self) -> None:
+        # ===================== compute the intrinsic rewards ===================== #
+        # prepare the data samples
+        obs = th.as_tensor(self.buffer.observations)
+        # get the new observations
+        new_obs = obs.clone()
+        new_obs[:-1] = obs[1:]
+        new_obs[-1] = th.as_tensor(self.locals["new_obs"])
+        actions = th.as_tensor(self.buffer.actions)
+        rewards = th.as_tensor(self.buffer.rewards)
+        dones = th.as_tensor(self.buffer.episode_starts)
+        print(obs.shape, actions.shape, rewards.shape, dones.shape, obs.shape)
+        # compute the intrinsic rewards
+        intrinsic_rewards = self.irs.compute(
+            samples=dict(observations=obs, actions=actions,
+                         rewards=rewards, terminateds=dones,
+                         truncateds=dones, next_observations=new_obs),
+            sync=True)
+        # add the intrinsic rewards to the buffer
+        self.buffer.advantages += intrinsic_rewards.cpu().numpy()
+        self.buffer.returns += intrinsic_rewards.cpu().numpy()
+        # ===================== compute the intrinsic rewards ===================== #
+
+
 def is_wrapped(env, wrapper_cls) -> bool:
     """Return True iff *env* (possibly deep‑inside) is an instance of *wrapper_cls*."""
     while isinstance(env, Wrapper):
@@ -348,6 +409,7 @@ class RLAgent(BaseAgent):
         normalize: bool = True,
         seed: int = 42,
         continue_training: bool = False,
+        irs: bool = False,
         hyperparams: dict = {},
     ):
         super().__init__(ascab=ascab_train, render=render)
@@ -364,6 +426,7 @@ class RLAgent(BaseAgent):
         self.normalize = normalize
         self.hyperparams = hyperparams
         self.seed = seed
+        self.use_irs = irs
 
         if use_comet:
             self.comet = None
@@ -386,6 +449,8 @@ class RLAgent(BaseAgent):
                 self.ascab_train = FlattenObservation(self.ascab_train)
             self.ascab = FilterObservation(self.ascab, filter_keys=self.observation_filter)
         self.ascab = FlattenObservation(self.ascab)
+
+
         if self.path_model is not None and (os.path.exists(self.path_model) or os.path.exists(self.path_model + ".zip")):
             print(f'Load model from disk: {self.path_model}')
             self.model = PPO.load(env=self.ascab_train if self.continue_training else self.ascab, path=self.path_model+".zip", print_system_info=False)
@@ -426,6 +491,11 @@ class RLAgent(BaseAgent):
                 best_model_save_path=self.path_model,
             )
             callbacks.append(eval_callback)
+
+            if self.use_irs is True and irs_algo is not None:
+                irs = E3B(envs=self.ascab_train, device="cpu")
+                irs_callback = IntrinsicRewardCallback(irs=irs)
+                callbacks.append(irs_callback)
 
         policy = "MlpPolicy" if self.algo != RecurrentPPO else "MlpLstmPolicy"
         policy = CostActorCriticPolicy if self.algo == LagrangianPPO else policy

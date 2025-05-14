@@ -52,7 +52,7 @@ def unique_path(path: str) -> str:
 
     return candidate
 
-def run_seed(seed: int, algo = PPO) -> str:
+def run_seed(seed: int, n_steps: int, algo = PPO) -> str:
     print("rl agent")
     print("seed:", seed)
 
@@ -66,7 +66,7 @@ def run_seed(seed: int, algo = PPO) -> str:
     normalize = True
     truncated_observations='truncated'
     log_path = os.path.join(os.getcwd(), "log")
-    name_agent = f"rl_agent_{algo.__name__}_trunc_bud_seed{seed}"
+    name_agent = f"rl_agent_{algo.__name__}_constrained_seed{seed}"
     save_path = os.path.join(os.getcwd(), "log", name_agent)
     # os.makedirs(save_path, exist_ok=True)
     save_path = unique_path(save_path)
@@ -89,8 +89,8 @@ def run_seed(seed: int, algo = PPO) -> str:
     observation_filter = list(ascab_train.observation_space.keys())
 
     if constrain:
-        ascab_train = ActionConstrainer(ascab_train, action_budget=8)
-        ascab_test = ActionConstrainer(ascab_test, action_budget=8)
+        ascab_train = ActionConstrainer(ascab_train, risk_period=False, action_budget=8)
+        ascab_test = ActionConstrainer(ascab_test, risk_period=False, action_budget=8)
 
     if terminate_early:
         ascab_train = EarlyTerminationWrapper(ascab_train, penalty=1.0)
@@ -105,7 +105,7 @@ def run_seed(seed: int, algo = PPO) -> str:
         ascab_test = ActionMasker(ascab_test, lambda e: e.remaining_sprays_masker())
 
     ascab_rl = RLAgent(ascab_train=ascab_train, ascab_test=ascab_test, observation_filter=observation_filter,
-                       n_steps=1_000_000 if algo != MaskablePPO else 300_000, render=False, path_model=save_path, path_log=log_path, rl_algorithm=algo,
+                       n_steps=1_000_000, render=False, path_model=save_path, path_log=log_path, rl_algorithm=algo,
                        seed=seed, normalize=normalize)
     print(ascab_train.histogram)
     print(ascab_test.histogram)
@@ -165,7 +165,8 @@ if __name__ == '__main__':
     argparser.add_argument("--seed", type=int, default=42)
     argparser.add_argument("--multiprocess", type=bool, default=False)
     argparser.add_argument("--agent", type=str, default="PPO")
+    argparser.add_argument("--n_steps", type=int, default=1_000_000)
     args = argparser.parse_args()
     rng= np.random.default_rng()
     random_int = rng.integers(low=0, high=1_000_000, size=1)[0]
-    run_seed(int(args.seed), agent_picker(args.agent))
+    run_seed(int(args.seed), args.n_steps, agent_picker(args.agent))

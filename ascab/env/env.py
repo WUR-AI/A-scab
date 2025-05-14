@@ -460,7 +460,7 @@ class ActionConstrainer(gym.ActionWrapper):
         super(ActionConstrainer, self).__init__(env)
         self.risk_period = risk_period
         self.action_budget = max(0, int(action_budget))
-        self.actions_left = action_budget
+        self.actions_left = self.action_budget
 
     def reset(self, seed=None, options=None):
         self.actions_left = self.action_budget

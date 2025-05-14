@@ -37,7 +37,7 @@ class LagrangianPPO(PPO):
         self.mean_approx_kl = None
         self.cost_vf_coef = 0.5
         self.lagrange = Lagrange(cost_limit=0.0, lagrangian_multiplier_init=0.001, lagrangian_multiplier_lr=0.0005,
-                                 lagrangian_upper_bound=1)
+                                 lagrangian_upper_bound=3)
 
     def _setup_model(self) -> None:
         super()._setup_model()
@@ -450,7 +450,7 @@ class RolloutBufferSteps(RolloutBuffer):
     costs: np.ndarray
     costs_values: np.ndarray
 
-    def __init__(self, buffer_size, observation_space, action_space, device='cpu', gae_lambda=1, gamma=1, n_envs=1,
+    def __init__(self, buffer_size, observation_space, action_space, device='cpu', gae_lambda=1, gamma=0.99, n_envs=1,
                  cost_scale = 0.01, **kwargs):
         super().__init__(buffer_size, observation_space, action_space, device, gae_lambda, gamma, n_envs, **kwargs)
         self.step_counter = np.zeros(n_envs, dtype=int)  # Initialize step counter for each environment

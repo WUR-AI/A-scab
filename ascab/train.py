@@ -438,8 +438,11 @@ class RLAgent(BaseAgent):
 
     def get_action(self, observation: Optional[dict] = None) -> float:
         if self.algo == MaskablePPO:
-            action_mask = self.ascab.remaining_sprays_masker()
-            return self.model.predict(observation, action_mask=action_mask)
+            if isinstance(self.ascab, VecNormalize):
+                action_mask = self.ascab.unwrapped.env_method('remaining_sprays_masker')
+            else:
+                action_mask = self.ascab.unwrapped.remaining_sprays_masker()
+            return self.model.predict(observation, action_masks=th.Tensor(action_mask), deterministic=True)[0]
         else:
             return self.model.predict(observation, deterministic=True)[0]
 
@@ -453,14 +456,14 @@ class RLAgent(BaseAgent):
             "gamma": 0.99,
             # "batch_size": 271,
             # "n_steps": 2168,
-            "learning_rate": 0.001,
+            # "learning_rate": 0.001,
             # "ent_coef": 0.01,
             "policy_kwargs": {
                 "ortho_init": False,
                 # "net_arch":
-                #     {"pi": [128, 128],
-                #      "vf": [128, 128],
-                #      "cf": [128, 128],}
+                #     {"pi": [256, 256],
+                #      "vf": [256, 256],
+                #      "cf": [256, 256],}
             },
         }
 

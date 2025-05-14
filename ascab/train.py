@@ -506,15 +506,42 @@ class RLAgent(BaseAgent):
         if self.path_model is not None:
             self.model.save(self.path_model)
 
-    def get_action(self, observation: Optional[dict] = None) -> float:
+    def run(self) -> pd.DataFrame:
+        all_infos = []
+        all_rewards = []
+        n_eval_episodes = self.get_n_eval_episodes()
+        for i in range(n_eval_episodes):
+            observation = self.reset_ascab()
+            total_reward = 0.0
+            terminated = False
+            states = None
+            episode_start = np.ones((1,), dtype=bool)
+            while not terminated:
+                action, states = self.get_action(observation, states=states, episode_start=episode_start)
+                observation, reward, terminated, info = self.step_ascab(action)
+                total_reward += reward
+                episode_start = terminated
+            all_rewards.append(total_reward)
+            print(f"Reward: {total_reward}")
+            all_infos.append(self.ascab.get_wrapper_attr('get_info')(to_dataframe=True)
+                             if not isinstance(self.ascab, VecNormalize)
+                             else self.filter_info(info))
+            if self.render:
+                self.ascab.render()
+        return pd.concat(all_infos, ignore_index=True)
+
+    def get_action(self, observation: Optional[dict] = None, states = None, episode_start = None) -> float:
         if self.algo == MaskablePPO:
             if isinstance(self.ascab, VecNormalize):
                 action_mask = self.ascab.unwrapped.env_method('remaining_sprays_masker')
             else:
                 action_mask = self.ascab.unwrapped.remaining_sprays_masker()
-            return self.model.predict(observation, action_masks=th.Tensor(action_mask), deterministic=True)[0]
+            return self.model.predict(observation, action_masks=th.Tensor(action_mask), deterministic=True)
         else:
-            return self.model.predict(observation, deterministic=True)[0]
+            return self.model.predict(observation,
+                                      state=states,
+                                      episode_start=episode_start,
+                                      deterministic=True)
 
     def lag_ppo(self):
         return {"constraint_fn": max_action_constraint} if self.algo == LagrangianPPO else {}

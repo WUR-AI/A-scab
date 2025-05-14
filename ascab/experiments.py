@@ -105,7 +105,7 @@ def run_seed(seed: int, n_steps: int, algo = PPO) -> str:
         ascab_test = ActionMasker(ascab_test, lambda e: e.remaining_sprays_masker())
 
     ascab_rl = RLAgent(ascab_train=ascab_train, ascab_test=ascab_test, observation_filter=observation_filter,
-                       n_steps=1_000_000, render=False, path_model=save_path, path_log=log_path, rl_algorithm=algo,
+                       n_steps=n_steps, render=False, path_model=save_path, path_log=log_path, rl_algorithm=algo,
                        seed=seed, normalize=normalize, irs=True)
     print(ascab_train.histogram)
     print(ascab_test.histogram)

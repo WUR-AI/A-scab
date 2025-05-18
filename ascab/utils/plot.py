@@ -1,6 +1,8 @@
 import os
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
 import matplotlib.dates as mdates
+import matplotlib.gridspec as gridspec
 import pandas as pd
 import numpy as np
 from typing import Union
@@ -12,9 +14,10 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
                  save_path: str = None,
                  fig_size: int = 10,
                  save_type: str = 'png',
-                 per_year: bool = False,):
+                 per_year: bool = False,
+                 zoom: bool = False,):
     results = {"": results} if not isinstance(results, dict) else results
-    alpha = 1.0 if len(results) == 1 else 0.5
+    alpha = 1.0 if len(results) == 1 else 0.6
 
     if variables is None:
         variables = list(results.values())[0].columns.tolist()
@@ -160,105 +163,242 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
         fig.subplots_adjust(bottom=0.25)
         plt.show()
 
-    else:
+    else:  # if year is True
         print("Printing per year results!~")
+        if not zoom:
+            cmap = plt.get_cmap('tab10')
 
-        cmap = plt.get_cmap('tab10')
+            # assume all your dfs have a 'Year' column already; if not, add it:
+            for df in results.values():
+                if "Year" not in df.columns:
+                    df["Year"] = df["Date"].dt.year
 
-        # assume all your dfs have a 'Year' column already; if not, add it:
-        for df in results.values():
-            if "Year" not in df.columns:
-                df["Year"] = df["Date"].dt.year
-
-        # figure out which years appear anywhere
-        all_years = sorted(
-            set().union(*(df["Year"].unique() for df in results.values()))
-        )
-
-        for year in all_years:
-            # 1) prepare a figure with one subplot per variable
-            fig, axes = plt.subplots(
-                num_variables, 1,
-                figsize=(fig_size, num_variables),
-                sharex=True
+            # figure out which years appear anywhere
+            all_years = sorted(
+                set().union(*(df["Year"].unique() for df in results.values()))
             )
 
-            # 2) for each key, filter & save that year's data, then plot it
-            for idx, (df_key, df) in enumerate(results.items()):
-                color = cmap(idx % cmap.N)
-                df_year = df[df["Year"] == year].copy()
-                if df_year.empty:
-                    continue
+            for year in all_years:
+                # 1) prepare a figure with one subplot per variable
+                fig, axes = plt.subplots(
+                    num_variables, 1,
+                    figsize=(fig_size, num_variables),
+                    sharex=True
+                )
 
-                # (a) save the raw year‐filtered data to CSV
-                # csv_path = os.path.join(out_dir, f"{df_key}_{year}.csv")
-                # df_year.to_csv(csv_path, index=False)
+                # 2) for each key, filter & save that year's data, then plot it
+                for idx, (df_key, df) in enumerate(results.items()):
+                    color = cmap(idx % cmap.N)
+                    df_year = df[df["Year"] == year].copy()
+                    if df_year.empty:
+                        continue
 
-                # (b) if you want reward‐sums per year in the legend:
-                if "Reward" in df_year.columns:
-                    total_reward = df_year["Reward"].sum()
-                    legend_label = f"{df_key}: {total_reward:.2f}"
-                else:
-                    legend_label = df_key
+                    # (a) save the raw year‐filtered data to CSV
+                    # csv_path = os.path.join(out_dir, f"{df_key}_{year}.csv")
+                    # df_year.to_csv(csv_path, index=False)
 
-                # (c) normalize dates to 2000 so years overlap
-                # df_year["DatePlot"] = df_year["Date"].apply(lambda ts: ts.replace(year=2000))
+                    # (b) if you want reward‐sums per year in the legend:
+                    if "Reward" in df_year.columns:
+                        total_reward = df_year["Reward"].sum()
+                        legend_label = f"{df_key}: {total_reward:.2f}"
+                    else:
+                        legend_label = df_key
 
-                # (d) plot each variable for this key/year
+                    # (c) normalize dates to 2000 so years overlap
+                    # df_year["DatePlot"] = df_year["Date"].apply(lambda ts: ts.replace(year=2000))
+
+                    # (d) plot each variable for this key/year
+                    for i, variable in enumerate(variables):
+                        ax = axes[i] if num_variables > 1 else axes
+                        ax.step(
+                            df_year["Date"],
+                            df_year[variable],
+                            where="post",
+                            label=legend_label,
+                            alpha=alpha,
+                            color=color,
+                        )
+                        # redraw your thresholds & maturation‐lines:
+                        if variable == "LeafWetness":
+                            ax.axhline(8.0, linestyle="--", color="red")
+                        elif variable == "Precipitation":
+                            ax.axhline(0.2, linestyle="--", color="red")
+                        elif variable == "TotalRain":
+                            ax.axhline(0.25, linestyle="--", color="red")
+                        elif variable == "HumidDuration":
+                            ax.axhline(8.0, linestyle="--", color="red")
+
+                        if variable == "AscosporeMaturation":
+                            for thresh in [get_pat_threshold(), 0.99]:
+                                exceed = df_year[df_year[variable] > thresh]
+                                if not exceed.empty:
+                                    x0 = exceed.iloc[0]["Date"]
+                                    ax.axvline(x0, linestyle="--", color="red")
+
+                    # if zoom is False:
+                    # 3) finish each subplot
                 for i, variable in enumerate(variables):
                     ax = axes[i] if num_variables > 1 else axes
-                    ax.step(
-                        df_year["Date"],
-                        df_year[variable],
-                        where="post",
-                        label=legend_label,
-                        alpha=alpha,
-                        color=color,
+                    # add the variable name in the first column
+                    ax.text(
+                        0.015, 0.85, variable,
+                        transform=ax.transAxes,
+                        va="top", ha="left",
+                        bbox=dict(facecolor="white",
+                                  edgecolor="lightgrey",
+                                  boxstyle="round,pad=0.25")
                     )
-                    # redraw your thresholds & maturation‐lines:
-                    if variable == "LeafWetness":
-                        ax.axhline(8.0, linestyle="--", color="red")
-                    elif variable == "Precipitation":
-                        ax.axhline(0.2, linestyle="--", color="red")
-                    elif variable == "TotalRain":
-                        ax.axhline(0.25, linestyle="--", color="red")
-                    elif variable == "HumidDuration":
-                        ax.axhline(8.0, linestyle="--", color="red")
-
-                    if variable == "AscosporeMaturation":
-                        for thresh in [get_pat_threshold(), 0.99]:
-                            exceed = df_year[df_year[variable] > thresh]
-                            if not exceed.empty:
-                                x0 = exceed.iloc[0]["Date"]
-                                ax.axvline(x0, linestyle="--", color="red")
-
-            # 3) finish each subplot
-            for i, variable in enumerate(variables):
-                ax = axes[i] if num_variables > 1 else axes
-                # add the variable name in the first column
-                ax.text(
-                    0.015, 0.85, variable,
-                    transform=ax.transAxes,
-                    va="top", ha="left",
-                    bbox=dict(facecolor="white",
-                              edgecolor="lightgrey",
-                              boxstyle="round,pad=0.25")
+                # unified legend on the bottom subplot
+                legend_ax = axes[-1] if num_variables > 1 else axes
+                legend_ax.legend(
+                    loc="upper center",
+                    bbox_to_anchor=(0.5, -0.25),
+                    ncol=len(results),
+                    frameon=False
                 )
-            # unified legend on the bottom subplot
-            legend_ax = axes[-1] if num_variables > 1 else axes
-            legend_ax.legend(
-                loc="upper center",
-                bbox_to_anchor=(0.5, -0.25),
-                ncol=len(results),
-                frameon=False
-            )
+                if save_path:
+                    out_path = os.path.join(save_path, f"plot_{year}.png")
+                    print(f'save {out_path}')
+                    plt.savefig(out_path, bbox_inches="tight", format=save_type, dpi=600)
+                plt.show()
+                plt.close(fig)
+        else:  # if zoom is True:
+            print("Printing zoomed results!~")
+            for year in sorted(set().union(*(df["Year"].unique()
+                                           for df in results.values()))):
+                fig, axes = make_year_plot(year, results, num_variables, fig_size=10, alpha=alpha)
+                if fig is None:
+                    continue
 
-            if save_path:
-                out_path = os.path.join(save_path, f"plot_{year}.png")
-                print(f'save {out_path}')
-                plt.savefig(out_path, bbox_inches="tight", format=save_type, dpi=600)
-            plt.show()
-            plt.close(fig)
+                for i, variable in enumerate(variables):
+                    ax = list(axes.values())[i]
+                    # add the variable name in the first column
+                    if variable in ['Pesticide', 'Risk', 'Action']:
+                        ax.text(
+                            0.05, 0.95, variable,
+                            transform=ax.transAxes,
+                            va="top", ha="left",
+                            bbox=dict(facecolor="white",
+                                      edgecolor="lightgrey",
+                                      boxstyle="round,pad=0.25")
+                        )
+                    else:
+                        ax.text(
+                            0.015, 0.85, variable,
+                            transform=ax.transAxes,
+                            va="top", ha="left",
+                            bbox=dict(facecolor="white",
+                                      edgecolor="lightgrey",
+                                      boxstyle="round,pad=0.25")
+                        )
+                # unified legend on the bottom subplot
+                legend_ax = list(axes.values())[-2]
+                legend_ax.legend(
+                    loc="upper center",
+                    bbox_to_anchor=(0.5, -0.1),
+                    ncol=len(results),
+                    frameon=False,
+                    fontsize="large"
+                )
+
+                if save_path:
+                    out_path = os.path.join(save_path, f"plot_zoom_{year}.png")
+                    print(f'save {out_path}')
+                    plt.savefig(out_path, bbox_inches="tight", format=save_type, dpi=600)
+                plt.show()
+                plt.close(fig)
+
+
+PAT_THR  = get_pat_threshold()
+END_THR  = 0.99                       # full maturation
+
+
+def make_year_plot(year, results_dict, num_variables=6, fig_size=9, alpha=0.5):
+    """
+    results_dict:  {name -> full-year dataframe}
+                   each df must have columns
+                   [Date, Precipitation, AscosporeMaturation, Discharge,
+                    Pesticide, Risk, Action]
+    """
+    cmap = plt.get_cmap("tab10")  # one colour per algorithm
+    # ── decide zoom window from the earliest start & latest end ──────────
+    start_date, end_date = None, None
+    for df in results_dict.values():
+        asc = df.loc[df["Year"] == year, "AscosporeMaturation"]
+        # skip empty dfs (algorithm did not run that year)
+        if asc.empty:
+            continue
+        s = df.loc[asc.gt(PAT_THR).idxmax(), "Date"]
+        e = df.loc[asc.gt(END_THR).idxmax(), "Date"]
+        start_date = s if start_date is None else min(start_date, s)
+        end_date   = e if end_date   is None else max(end_date,   e)
+
+    if start_date is None or end_date is None:
+        print(f"No data for {year}")
+        return
+
+    # ── layout 4×3  (top three rows span, bottom split) ──────────────────
+    fig = plt.figure(figsize=(fig_size, fig_size-2))
+    gs  = gridspec.GridSpec(4, 3, height_ratios=[.5,.5,.5,1.0],
+                            hspace=.22, wspace=.22)
+
+    axes = {
+        "Precipitation"       : fig.add_subplot(gs[0, :]),
+        "AscosporeMaturation" : fig.add_subplot(gs[1, :]),
+        "Discharge"           : fig.add_subplot(gs[2, :]),
+        "Pesticide"           : fig.add_subplot(gs[3, 0]),
+        "Risk"                : fig.add_subplot(gs[3, 1]),
+        "Action"              : fig.add_subplot(gs[3, 2]),
+    }
+
+    # ── plot every algorithm on the same axes ────────────────────────────
+    for idx, (name, df_full) in enumerate(results_dict.items()):
+        df = df_full[df_full["Year"] == year]
+        if df.empty:
+            continue
+        colour = cmap(idx % cmap.N)
+
+        total_reward = df["Reward"].sum()
+        legend_label = f"{name}: {total_reward:.2f}"
+
+        for var, ax in axes.items():
+            ax.step(df["Date"], df[var], where="post",
+                    label=legend_label if var=="Risk" else None,  # legend once
+                    color=colour, alpha=alpha)
+
+    # ── cosmetics / zoom bottom row, red lines, labels  ──────────────────
+    for var, ax in axes.items():
+        ax.set_ylabel(var)
+
+        if var == "Precipitation":
+            ax.axhline(0.2, linestyle="--", color="red")
+
+        if var == "AscosporeMaturation":
+            ax.axvline(start_date, color="red", ls="--")
+            ax.axvline(end_date,   color="red", ls="--")
+
+        if var in ["Pesticide","Risk","Action"]:
+            ax.set_xlim(start_date, end_date)
+            ax.xaxis.set_major_locator(mdates.MonthLocator(interval=1))
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+            ax.yaxis.set_major_formatter(mtick.FormatStrFormatter('%.2f'))
+            # for t in ax.get_xticklabels():
+            #     t.set_rotation(45)
+        elif var in ["Discharge"]:
+            ...
+        else:
+            ax.set_xlabel("")          # hide shared x-labels on upper rows
+            ax.set_xticklabels([])
+
+        ax.set_ylabel("")
+
+    # unified legend → use one of the bottom axes
+    axes["Risk"].legend(loc="lower center",
+                          bbox_to_anchor=(1.5, -0.28),   # centre under grid
+                          ncol=min(4, len(results_dict)),
+                          frameon=False)
+    # fig.tight_layout()
+    return fig, axes
 
 
 def plot_infection(infection: InfectionRate):
@@ -471,7 +611,7 @@ def plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted
     ax.set_xticklabels(years)
     ax.set_ylim(0, 1.05)
     ax.set_yticks(np.linspace(0,1,11))
-    ax.set_ylabel('Normalized Reward')
+    ax.set_ylabel('Normalized Reward based on Ceres')
     ax.set_xlabel('Year')
     ax.legend()
     ax.grid(True, axis='y')
@@ -558,5 +698,197 @@ def plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted):
     ax.set_xlabel('Year')
     ax.legend()
     ax.grid(True, axis='y')
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_risk(dict_extracted, baselines_extracted, random_extracted):
+    years = sorted(dict_extracted['Risk'].keys())
+    cmap = plt.get_cmap('tab10')
+    alpha = 0.9
+
+    baseline_u = []  # Umbrella
+    baseline_z = []  # Zero
+    baseline_c = []
+    random_distributions = []
+    rl_distributions = []
+
+    for yr in years:
+        rl_raw = np.array(dict_extracted['Risk'][yr])
+        random_raw = np.array(random_extracted['Risk'][yr])
+
+
+        # baselines_extracted['Reward'][yr] == [ceres, umbrella, zero]
+        ceres, umb, zro = baselines_extracted['Risk'][yr]
+        baseline_c.append(ceres)
+        baseline_u.append(umb)
+        baseline_z.append(zro)
+
+        random_distributions.append(random_raw)
+        rl_distributions.append(rl_raw)
+
+    means = [np.mean(arr) for arr in rl_distributions]
+    stds = [np.std(arr) for arr in rl_distributions]
+
+    means_random = [np.mean(arr) for arr in random_distributions]
+    stds_random = [np.std(arr) for arr in random_distributions]
+
+    x = np.arange(len(years))
+
+    fig, ax = plt.subplots()
+
+    # Define bar width and offsets
+    width = 0.15
+    offsets = {
+        'Ceres': -2 * width,
+        'Umbrella': -1 * width,
+        'Zero': 0,
+        'RL': 1 * width,
+        'Random': 2 * width,
+    }
+    # Bars for baselines
+    ax.bar(x + offsets['Ceres'], baseline_c, width, label='Ceres', color=cmap(2), alpha=alpha)
+    ax.bar(x + offsets['Umbrella'], baseline_u, width, label='Umbrella', color=cmap(1), alpha=alpha)
+    ax.bar(x + offsets['Zero'], baseline_z, width, label='Zero', color=cmap(0), alpha=alpha)
+
+    # Bars with errorbars for distributions
+    ax.bar(
+        x + offsets['RL'],
+        means,
+        width,
+        yerr=stds,
+        capsize=5,
+        label='RL (mean ± std)',
+        color=cmap(3),
+        alpha=alpha
+    )
+    ax.bar(
+        x + offsets['Random'],
+        means_random,
+        width,
+        yerr=stds_random,
+        capsize=5,
+        label='Random (mean ± std)',
+        color=cmap(4),
+        alpha=alpha
+    )
+
+    # Formatting
+    ax.set_xticks(x)
+    ax.set_xticklabels(years)
+    ax.set_ylim(0, 1)
+    ax.set_yticks(np.linspace(0,1,11))
+    ax.set_ylabel('Risk')
+    ax.set_xlabel('Year')
+    ax.legend()
+    ax.grid(True, axis='y')
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_use_vs_risk(dict_extracted, baselines_extracted, random_extracted):
+    """
+    Relationship-first view: every dot is one algorithm in one year.
+    Years are colour-coded so the path through time is visible.
+    Error bars (1 SD) are drawn for RL and Random, where you have distributions.
+    """
+
+    years = sorted(dict_extracted['Pesticide'].keys())
+    cmap = plt.get_cmap('tab10')
+
+    # --- Collect the numbers -------------------------------------------------
+    # Baselines arrive as single values
+    ceres_use, ceres_risk   = [], []
+    umb_use,   umb_risk     = [], []
+    zero_use,  zero_risk    = [], []
+
+    # RL / Random arrive as distributions → need mean & SD
+    rl_use_mean, rl_use_sd       = [], []
+    rl_risk_mean, rl_risk_sd     = [], []
+    rnd_use_mean, rnd_use_sd     = [], []
+    rnd_risk_mean, rnd_risk_sd   = [], []
+
+    for yr in years:
+        # baselines_extracted['Pesticide'][yr] == [ceres, umbrella, zero]
+        cu, uu, zu = baselines_extracted['Pesticide'][yr]
+        cr, ur, zr = baselines_extracted['Risk'][yr]
+
+        ceres_use.append(cu);   ceres_risk.append(cr)
+        umb_use.append(uu);     umb_risk.append(ur)
+        zero_use.append(zu);    zero_risk.append(zr)
+
+        # RL + Random – take stats of the raw arrays
+        rl_u  = np.asarray(dict_extracted['Pesticide'][yr])
+        rl_r  = np.asarray(dict_extracted['Risk'][yr])
+        # rnd_u = np.asarray(random_extracted['Pesticide'][yr])
+        # rnd_r = np.asarray(random_extracted['Risk'][yr])
+
+        rl_use_mean.append(rl_u.mean());     rl_use_sd.append(rl_u.std())
+        rl_risk_mean.append(rl_r.mean());    rl_risk_sd.append(rl_r.std())
+        # rnd_use_mean.append(rnd_u.mean());   rnd_use_sd.append(rnd_u.std())
+        # rnd_risk_mean.append(rnd_r.mean());  rnd_risk_sd.append(rnd_r.std())
+
+    # --- Plot ----------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(7, 5))
+    sc_kwargs = dict(s=65, edgecolors='k', linewidths=.4)   # consistent look
+    errbar_marker_kws = dict(markeredgecolor='k',
+                             markeredgewidth=.4,
+                             markersize=7,
+                             linestyle='none')
+
+    # Each baseline: one marker per year, coloured by year
+    points = ax.scatter(ceres_use, ceres_risk, color=cmap(2),
+                        marker='o', label='Ceres',   **sc_kwargs)
+    ax.scatter(umb_use, umb_risk, color=cmap(1),
+               marker='o', label='Umbrella', **sc_kwargs)
+    # ax.scatter(zero_use,  zero_risk, color=cmap(0),
+    #            marker='^', label='Zero',  **sc_kwargs)
+
+    # RL & Random with 1-SD error bars
+    ax.errorbar(rl_use_mean,  rl_risk_mean,  xerr=rl_use_sd,  yerr=rl_risk_sd,
+                fmt='o', capsize=4, color=cmap(3), label='RL (mean ± sd)',   **errbar_marker_kws)
+    # ax.errorbar(rnd_use_mean, rnd_risk_mean, xerr=rnd_use_sd, yerr=rnd_risk_sd,
+    #             fmt='v', capsize=4, label='Random (mean ± sd)', **errbar_marker_kws)
+
+    # Baselines
+    for x, y, yr in zip(ceres_use, ceres_risk, years):
+        ax.annotate(str(yr), (x, y), xytext=(4, 4), textcoords='offset points',
+                    ha='left', va='bottom', fontsize=8)
+
+    for x, y, yr in zip(umb_use, umb_risk, years):
+        ax.annotate(str(yr), (x, y), xytext=(4, 4), textcoords='offset points',
+                    ha='left', va='bottom', fontsize=8)
+
+    # for x, y, yr in zip(zero_use, zero_risk, years):
+    #     ax.annotate(str(yr), (x, y), xytext=(4, 4), textcoords='offset points',
+    #                 ha='left', va='bottom', fontsize=8)
+
+    # RL / Random – annotate the *means*
+    for x, y, yr in zip(rl_use_mean, rl_risk_mean, years):
+        ax.annotate(str(yr), (x, y), xytext=(4, 4), textcoords='offset points',
+                    ha='left', va='bottom', fontsize=8)
+
+    # for x, y, yr in zip(rnd_use_mean, rnd_risk_mean, years):
+    #     ax.annotate(str(yr), (x, y), xytext=(4, 4), textcoords='offset points',
+    #                 ha='left', va='bottom', fontsize=8)
+
+    # Optional: LOWESS or linear trend across ALL points
+    # all_use  = np.concatenate([ceres_use, umb_use, zero_use,
+    #                            rl_use_mean, rnd_use_mean])
+    # all_risk = np.concatenate([ceres_risk, umb_risk, zero_risk,
+    #                            rl_risk_mean, rnd_risk_mean])
+    # sns.regplot(x=all_use, y=all_risk, scatter=False,
+    #             lowess=True, ci=None, ax=ax, line_kws={'lw':1.4, 'ls':'--'})
+
+    # ------------------------------------------------------------------
+
+    # Cosmetics
+    # cbar = fig.colorbar(points, ax=ax, pad=.02)
+    # cbar.set_label('Year')
+
+    ax.set_xlabel('Total pesticide use')
+    ax.set_ylabel('Total risk index')
+    ax.grid(True, ls=':')
+    ax.legend()
     plt.tight_layout()
     plt.show()

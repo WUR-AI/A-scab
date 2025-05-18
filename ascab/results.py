@@ -5,7 +5,8 @@ import argparse
 import numpy as np
 import pandas as pd
 
-from ascab.utils.plot import plot_normalized_reward, plot_pesticide_use, plot_results
+from ascab.utils.plot import plot_normalized_reward, plot_pesticide_use, plot_results, plot_risk, plot_use_vs_risk
+
 
 def separate_underscore(string, index = 0):
     string = string.split('_')
@@ -17,7 +18,7 @@ def separate_underscore(string, index = 0):
 
 def extract_metrics(results_dict):
 
-    dict_extracted = {"Reward": {}, "Pesticide": {}, 'Pesticide_actions': {}, 'Precipitation': {}}
+    dict_extracted = {"Reward": {}, "Pesticide": {}, 'Pesticide_actions': {}, 'Precipitation': {}, 'Risk': {}}
     years_list = []
 
     for k, df in results_dict.items():
@@ -44,6 +45,12 @@ def extract_metrics(results_dict):
             for year, prec in precipitation_per_year:
                 dict_extracted['Precipitation'].setdefault(year, []).append(prec)
 
+        if "Risk" in df.columns:
+            df['Year'] = df['Date'].dt.year
+            risk_per_year = df.groupby('Year')['Risk'].sum()
+            for year, risk in risk_per_year.items():
+                dict_extracted['Risk'].setdefault(year, []).append(risk)
+
         years_list.append(k)
 
     return dict_extracted
@@ -65,7 +72,7 @@ def main(args):
     pkl_dir = os.path.join(os.path.dirname(this_file_path), 'results')
     pkl_dir_baselines = pkl_dir
     if args.trunc:
-        pkl_dir = os.path.join(os.path.dirname(this_file_path), 'results', 'new_obs')
+        pkl_dir = os.path.join(os.path.dirname(this_file_path), 'results', 'rppo')
     baseline_pickle_names = ['ceres.pkl', 'random.pkl', 'umbrella.pkl', 'zero.pkl']
 
     results_dict = {}
@@ -96,7 +103,7 @@ def main(args):
     baseline_names = ["Ceres", "Umbrella", "Zero"]
 
 
-    for category in ["Reward", "Pesticide"]:
+    for category in ["Reward", "Pesticide", "Risk"]:
         print(f"\n{category} stats per year:")
         for year in sorted(dict_extracted[category].keys()):
             values = dict_extracted[category][year]
@@ -117,28 +124,32 @@ def main(args):
     if plot_it:
         plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted, plot_type='bar')
         plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted)
+        plot_risk(dict_extracted, baselines_extracted, random_extracted)
+        plot_use_vs_risk(dict_extracted, baselines_extracted, random_extracted)
 
         dict_to_plot = {"Zero":baselines_dict["zero"],
              "Umbrella":baselines_dict["umbrella"],
              "Ceres":baselines_dict["ceres"],
-             "RL":results_dict[list(results_dict.keys())[0]],
+             "RL":results_dict[list(results_dict.keys())[1]],
              "Random":random_dict[next(iter(random_dict))],}
         # for k, v in dict_to_plot.items():
-        plot_results(
-            dict_to_plot,
-            variables=[
-                "Precipitation",
-                 "AscosporeMaturation",
-                 "Discharge",
-                 "Pesticide",
-                 "Risk",
-                 "Action",
-            ],
-            save_path=os.path.join(pkl_dir),
-            per_year=True,
-        )
+        for zoom in [True, False]:
+            plot_results(
+                dict_to_plot,
+                variables=[
+                    "Precipitation",
+                     "AscosporeMaturation",
+                     "Discharge",
+                     "Pesticide",
+                     "Risk",
+                     "Action",
+                ],
+                save_path=os.path.join(pkl_dir),
+                per_year=True,
+                zoom=zoom,
+            )
 
-    statistics = True
+    statistics = False
     if statistics:
         # Define agent groups
         baseline_agents = ["Ceres", "Umbrella", "Zero"]
@@ -148,7 +159,7 @@ def main(args):
             'seed89331'
         ]
 
-        for x in ['Reward', 'Pesticide']:
+        for x in ['Reward', 'Pesticide', 'Risk']:
 
             print(f'{x} summary')
 

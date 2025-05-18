@@ -589,6 +589,8 @@ class RLAgent(BaseAgent):
         comet_log.log_parameters(exp_params)
 
         comet_log.set_name(f'{self.algo.__name__}-{self.seed}')
+        comet_log.add_tags(
+            [self.algo.__name__, "IRS" if self.use_irs else "", "lr" + str(self.algo_hyperparams()['learning_rate'])])
 
         self.ascab_train = CometLogger(self.ascab_train, comet_log)
         self.comet = comet_log
@@ -602,6 +604,7 @@ if __name__ == "__main__":
             biofix_date="March 10",
             budbreak_date="March 10",
             mode="sequential",
+            discrete_actions=False,
         )
     ascab_env_constrained = ActionConstrainer(ascab_env)
 
@@ -620,6 +623,11 @@ if __name__ == "__main__":
     print("umbrella agent")
     umbrella_agent = UmbrellaAgent(ascab=ascab_env_constrained, render=False)
     umbrella_results = umbrella_agent.run()
+
+    save_path = os.path.join(os.getcwd(), f"rl_agent_umbrella")
+    with open(save_path + ".pkl", "wb") as f:
+        print(f"saved to {save_path + '.pkl'}")
+        pickle.dump(umbrella_results, file=f)
 
     use_random = False
     if use_random:
@@ -642,6 +650,7 @@ if __name__ == "__main__":
                 biofix_date="March 10",
                 budbreak_date="March 10",
                 mode="sequential",
+                discrete_actions=False,
             )
             ascab_env_constrained = ActionConstrainer(ascab_env)
             optimizer = CeresOptimizer(ascab_env_constrained,

@@ -4,6 +4,7 @@ import argparse
 
 import numpy as np
 import pandas as pd
+from setuptools.sandbox import save_path
 
 from ascab.utils.plot import plot_normalized_reward, plot_pesticide_use, plot_results, plot_risk, plot_use_vs_risk
 
@@ -123,8 +124,8 @@ def main(args):
     plot_it = True
     if plot_it:
         plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted, plot_type='bar')
-        plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted)
-        plot_risk(dict_extracted, baselines_extracted, random_extracted)
+        plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted, pareto_line=True, save_path=pkl_dir)
+        plot_risk(dict_extracted, baselines_extracted, random_extracted, pareto_line=True, save_path=pkl_dir)
         plot_use_vs_risk(dict_extracted, baselines_extracted, random_extracted)
 
         dict_to_plot = {"Zero":baselines_dict["zero"],
@@ -133,7 +134,7 @@ def main(args):
              "RL":results_dict[list(results_dict.keys())[1]],
              "Random":random_dict[next(iter(random_dict))],}
         # for k, v in dict_to_plot.items():
-        for zoom in [True, False]:
+        for zoom in [True]:
             plot_results(
                 dict_to_plot,
                 variables=[
@@ -147,6 +148,7 @@ def main(args):
                 save_path=os.path.join(pkl_dir),
                 per_year=True,
                 zoom=zoom,
+                stacked=True if zoom else False,
             )
 
     statistics = False

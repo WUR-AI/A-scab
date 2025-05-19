@@ -123,9 +123,9 @@ def main(args):
 
     plot_it = True
     if plot_it:
-        plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted, plot_type='bar')
+        plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted, save_path=pkl_dir)
         plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted, pareto_line=True, save_path=pkl_dir)
-        plot_risk(dict_extracted, baselines_extracted, random_extracted, pareto_line=True, save_path=pkl_dir)
+        plot_risk(dict_extracted, baselines_extracted, random_extracted, avg_line=True, save_path=pkl_dir)
         plot_use_vs_risk(dict_extracted, baselines_extracted, random_extracted)
 
         dict_to_plot = {"Zero":baselines_dict["zero"],
@@ -137,14 +137,6 @@ def main(args):
         for zoom in [True]:
             plot_results(
                 dict_to_plot,
-                variables=[
-                    "Precipitation",
-                     "AscosporeMaturation",
-                     "Discharge",
-                     "Pesticide",
-                     "Risk",
-                     "Action",
-                ],
                 save_path=os.path.join(pkl_dir),
                 per_year=True,
                 zoom=zoom,

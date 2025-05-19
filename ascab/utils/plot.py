@@ -11,8 +11,19 @@ from typing import Union
 from ascab.model.infection import InfectionRate, get_pat_threshold
 
 
+def get_default_plot_variables() -> list:
+    return [
+        "Precipitation",
+         "AscosporeMaturation",
+         "Discharge",
+         "Pesticide",
+         "Risk",
+         "Action",
+    ]
+
+
 def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
-                 variables: list[str] = None,
+                 variables: list[str] = get_default_plot_variables(),
                  save_path: str = None,
                  fig_size: int = 10,
                  save_type: str = 'png',
@@ -298,22 +309,12 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
                     subfig_left.add_subplot(gs[i, :]) for i, _ in enumerate(variables)
                 ]
 
-
-                # axes_left = subfig_left.subplots(
-                #     num_variables, 1,
-                #     sharex=True
-                # )
-
                 # 2) for each key, filter & save that year's data, then plot it
                 for idx, (df_key, df) in enumerate(results.items()):
                     color = cmap(idx % cmap.N)
                     df_year = df[df["Year"] == year].copy()
                     if df_year.empty:
                         continue
-
-                    # (a) save the raw year‐filtered data to CSV
-                    # csv_path = os.path.join(out_dir, f"{df_key}_{year}.csv")
-                    # df_year.to_csv(csv_path, index=False)
 
                     # (b) if you want reward‐sums per year in the legend:
                     if "Reward" in df_year.columns:
@@ -414,8 +415,6 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
                         # diagonal from bottom-left to top-right of the *whole* canvas
                         color_line = 'red'
 
-
-
                         for edge in [0, 1]:
                             # Get left coords
                             x0_num = mdates.date2num(end_date if edge == 0 else start_date)
@@ -498,10 +497,10 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
                 plt.close(fig)
 
 
-PAT_THR  = get_pat_threshold()
-END_THR  = 0.99                       # full maturation
-
 def get_thresholds_per_year(year, results_dict):
+    PAT_THR = get_pat_threshold()
+    END_THR = 0.99  # full maturation
+
     start_date, end_date = None, None
     for df in results_dict.values():
         asc = df.loc[df["Year"] == year, "AscosporeMaturation"]
@@ -727,7 +726,7 @@ def plot_precipitation_with_rain_event(df_hourly: pd.DataFrame, day: pd.Timestam
     plt.axhline(y=0.2, color='red', linestyle='--', label='Threshold')
     plt.show()
 
-def plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted, plot_type='bar'):
+def plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted, save_path: str = None):
     years = sorted(dict_extracted['Reward'].keys())
     cmap = plt.get_cmap('tab10')
 
@@ -776,82 +775,42 @@ def plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted
 
     fig, ax = plt.subplots()
 
-    if plot_type == 'scatter':
+    alpha = 0.9
+    # Define bar width and offsets
+    width = 0.15
+    offsets = {
+        'Ceres': -2 * width,
+        'Umbrella': -1 * width,
+        'Zero': 0,
+        'RL': 1 * width,
+        'Random': 2 * width,
+    }
+    # Bars for baselines
+    ax.bar(x + offsets['Ceres'], baseline_c, width, label='Ceres', color=cmap(2), alpha=alpha) #e41a1c
+    ax.bar(x + offsets['Umbrella'], baseline_u, width, label='Umbrella', color=cmap(1), alpha=alpha) #ff7f00
+    ax.bar(x + offsets['Zero'], baseline_z, width, label='Zero', color=cmap(0), alpha=alpha) #a65628
 
-        # scatter Ceres Umbrella & Zero
-        size = 40
-        ax.scatter(x + offsets['Ceres'], baseline_c, marker='o', s=size, label='Ceres', color='#e41a1c')
-        # ax.scatter(x + offsets['Random'], baseline_r, marker='o', s=size, label='Random', color='#4daf4a')
-        ax.errorbar(
-            x + offsets['Random'],
-            # medians,
-            means_random,
-            yerr=stds_random,
-            fmt='o',
-            capsize=5,
-            label='Random (mean ± std)',
-            color='#4daf4a',
-        )
-        ax.scatter(x + offsets['Umbrella'], baseline_u, marker='o', s=size, label='Umbrella', color='#ff7f00')
-        ax.scatter(x + offsets['Zero'], baseline_z, marker='o', s=size, label='Zero', color='#a65628')
-
-        # 2) RL medians + IQR errorbars
-        # yerr_lower = [med - q1 for med, q1 in zip(medians, q1s)]
-        # yerr_upper = [q3 - med for med, q3 in zip(medians, q3s)]
-        # yerr = np.vstack([yerr_lower, yerr_upper])
-
-        yerr = stds
-
-        ax.errorbar(
-            x + offsets['RL'],
-            # medians,
-            means,
-            yerr=yerr,
-            fmt='o',
-            capsize=5,
-            label='RL (mean ± std)',
-            color='#377eb8',
-        )
-    elif plot_type == 'bar':
-        alpha = 0.9
-        # Define bar width and offsets
-        width = 0.15
-        offsets = {
-            'Ceres': -2 * width,
-            'Umbrella': -1 * width,
-            'Zero': 0,
-            'RL': 1 * width,
-            'Random': 2 * width,
-        }
-        # Bars for baselines
-        ax.bar(x + offsets['Ceres'], baseline_c, width, label='Ceres', color=cmap(2), alpha=alpha) #e41a1c
-        ax.bar(x + offsets['Umbrella'], baseline_u, width, label='Umbrella', color=cmap(1), alpha=alpha) #ff7f00
-        ax.bar(x + offsets['Zero'], baseline_z, width, label='Zero', color=cmap(0), alpha=alpha) #a65628
-
-        # Bars with errorbars for distributions
-        ax.bar(
-            x + offsets['RL'],
-            means,
-            width,
-            yerr=stds,
-            capsize=5,
-            label='RL (mean ± std)',
-            color=cmap(3), #377eb8
-            alpha=alpha
-        )
-        ax.bar(
-            x + offsets['Random'],
-            means_random,
-            width,
-            yerr=stds_random,
-            capsize=5,
-            label='Random (mean ± std)',
-            color=cmap(4), #4daf4a
-            alpha=alpha
-        )
-
-    else:
-        raise ValueError("plot_type must be either 'scatter' or 'bar'")
+    # Bars with errorbars for distributions
+    ax.bar(
+        x + offsets['RL'],
+        means,
+        width,
+        yerr=stds,
+        capsize=5,
+        label='RL (mean ± std)',
+        color=cmap(3), #377eb8
+        alpha=alpha
+    )
+    ax.bar(
+        x + offsets['Random'],
+        means_random,
+        width,
+        yerr=stds_random,
+        capsize=5,
+        label='Random (mean ± std)',
+        color=cmap(4), #4daf4a
+        alpha=alpha
+    )
 
     # Formatting
     ax.set_xticks(x)
@@ -862,10 +821,17 @@ def plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted
     ax.set_xlabel('Year')
     ax.legend()
     ax.grid(True, axis='y')
+
+    if save_path:
+        out_path = os.path.join(save_path, f"plot_reward.png")
+        print(f'save {out_path}')
+        plt.savefig(out_path, bbox_inches="tight", format='png', dpi=600)
+
     plt.tight_layout()
     plt.show()
 
-def plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted, pareto_line: bool = False, save_path=None):
+def plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted, pareto_line: bool = False, save_path=None,
+                       avg_line: bool = False):
     years = sorted(dict_extracted['Pesticide'].keys())
     cmap = plt.get_cmap('tab10')
     alpha = 0.9
@@ -939,6 +905,9 @@ def plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted, pa
     if pareto_line:
         ax1 = pareto_line_plot(x, baseline_c, baseline_u, means, offsets, ax, cmap, alpha)
 
+    if avg_line:
+        plot_avg_line(alpha, ax, baseline_c, baseline_u, baseline_z, cmap, means, means_random)
+
     # Formatting
     ax.set_xticks(x)
     ax.set_xticklabels(years)
@@ -961,6 +930,15 @@ def plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted, pa
     plt.show()
 
 
+def plot_avg_line(alpha, ax, baseline_c, baseline_u, baseline_z, cmap, means, means_random):
+    ax.axhline(np.median(baseline_c), alpha=alpha, color=cmap(2), linestyle='--')
+    ax.axhline(np.median(baseline_u), alpha=alpha, color=cmap(1), linestyle='--')
+    ax.axhline(np.median(baseline_z), alpha=alpha, color=cmap(0), linestyle='--')
+    ax.axhline(np.median(means), alpha=alpha, color=cmap(3), linestyle='--')
+    ax.axhline(np.median(means_random), alpha=alpha, color=cmap(4), linestyle='--')
+    return ax
+
+
 def pareto_line_plot(x, baseline_c, baseline_u, means, offsets, ax, cmap, alpha):
     cumsum_ceres = np.cumsum(baseline_c)
     cumsum_umb = np.cumsum(baseline_u)
@@ -977,7 +955,8 @@ def pareto_line_plot(x, baseline_c, baseline_u, means, offsets, ax, cmap, alpha)
     return ax1
 
 
-def plot_risk(dict_extracted, baselines_extracted, random_extracted, pareto_line: bool = False, save_path: str = None):
+def plot_risk(dict_extracted, baselines_extracted, random_extracted, pareto_line: bool = False, save_path: str = None,
+              avg_line: bool = False):
     years = sorted(dict_extracted['Risk'].keys())
     cmap = plt.get_cmap('tab10')
     alpha = 0.9
@@ -1050,6 +1029,9 @@ def plot_risk(dict_extracted, baselines_extracted, random_extracted, pareto_line
 
     if pareto_line:
         ax1 = pareto_line_plot(x, baseline_c, baseline_u, means, offsets, ax, cmap, alpha)
+
+    if avg_line:
+        plot_avg_line(alpha, ax, baseline_c, baseline_u, baseline_z, cmap, means, means_random)
 
     # Formatting
     ax.set_xticks(x)

@@ -143,7 +143,7 @@ def main(args):
                 stacked=True if zoom else False,
             )
 
-    statistics = False
+    statistics = True
     if statistics:
         # Define agent groups
         baseline_agents = ["Ceres", "Umbrella", "Zero"]
@@ -197,6 +197,9 @@ def main(args):
                 p_one_sided_ceres = np.sum(diffs_ceres <= 0) / n_boot
                 p_one_sided_umb = np.sum(diffs_umb <= 0) / n_boot
             elif x == 'Pesticide':
+                p_one_sided_ceres = np.sum(diffs_ceres > 0) / n_boot
+                p_one_sided_umb = np.sum(diffs_umb > 0) / n_boot
+            elif x == "Risk":
                 p_one_sided_ceres = np.sum(diffs_ceres > 0) / n_boot
                 p_one_sided_umb = np.sum(diffs_umb > 0) / n_boot
 

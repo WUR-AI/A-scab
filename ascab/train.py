@@ -262,7 +262,7 @@ class UmbrellaAgent(BaseAgent):
         ascab: Optional[AScabEnv] = None,
         render: bool = True,
         pesticide_threshold: float = 0.1,
-        pesticide_filled_to: float = 0.5,
+        pesticide_filled_to: float = 0.75,
     ):
         super().__init__(ascab=ascab, render=render)
         self.pesticide_threshold = pesticide_threshold
@@ -272,6 +272,21 @@ class UmbrellaAgent(BaseAgent):
         if self.ascab.get_wrapper_attr("info")["Forecast_day1_HasRain"] and self.ascab.get_wrapper_attr("info")["Forecast_day1_HasRain"][-1]:
             if self.ascab.get_wrapper_attr("info")["Pesticide"] and self.ascab.get_wrapper_attr("info")["Pesticide"][-1] < self.pesticide_threshold:
                 return self.pesticide_filled_to - self.ascab.get_wrapper_attr("info")["Pesticide"][-1]
+        return 0.0
+
+class NaiveUmbrellaAgent(BaseAgent):
+    def __init__(
+        self,
+        ascab: Optional[AScabEnv] = None,
+        render: bool = True,
+        pesticide_filled_to: float = 0.75,
+    ):
+        super().__init__(ascab=ascab, render=render)
+        self.pesticide_filled_to = pesticide_filled_to
+
+    def get_action(self, observation: dict = None) -> float:
+        if self.ascab.get_wrapper_attr("info")["Forecast_day1_HasRain"] and self.ascab.get_wrapper_attr("info")["Forecast_day1_HasRain"][-1]:
+            return self.pesticide_filled_to
         return 0.0
 
 class RandomAgent(BaseAgent):

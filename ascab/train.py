@@ -29,7 +29,7 @@ except ImportError:
     RecurrentPPO = None
 
 class BaseAgent(abc.ABC):
-    def __init__(self, ascab: Optional[AScabEnv] = None, render: bool = True):
+    def __init__(self, ascab: Optional[AScabEnv] = None, render: bool = False):
         self.ascab = ascab or AScabEnv()
         self.render = render
 
@@ -60,19 +60,11 @@ class BaseAgent(abc.ABC):
         pass
 
     def step_ascab(self, action):
-        if not isinstance(self.ascab, VecNormalize):
-            observation, reward, terminated, _, info = self.ascab.step(action)
-        else:
-            observation, reward, terminated, info = self.ascab.step(action)
-
+        observation, reward, terminated, _, info = self.ascab.step(action)
         return observation, reward, terminated, info
 
     def reset_ascab(self):
-        # check if
-        if not isinstance(self.ascab, VecNormalize):
-            observation, _ = self.ascab.reset()
-        else:
-            observation = self.ascab.reset()
+        observation, _ = self.ascab.reset()
         return observation
 
     def get_n_eval_episodes(self):
@@ -91,7 +83,7 @@ class BaseAgent(abc.ABC):
 
 
 class CeresAgent(BaseAgent):
-    def __init__(self, ascab: Optional[AScabEnv] = None, render: bool = True):
+    def __init__(self, ascab: Optional[AScabEnv] = None, render: bool = False):
         super().__init__(ascab, render)
         self.full_action_sequence = None
         self.unmasked_indices = None
@@ -307,7 +299,7 @@ class RLAgent(BaseAgent):
         normalize: bool = True,
         seed: int = 42,
         continue_training: bool = False,
-        hyperparams: Optional[dict] = None,
+        hyperparameters: dict = {},
     ):
         super().__init__(ascab=ascab_train, render=render)
         self.ascab_train = ascab_train
@@ -320,9 +312,9 @@ class RLAgent(BaseAgent):
         self.algo = rl_algorithm
         self.is_discrete = discrete_actions
         self.continue_training = continue_training
-        self.normalize = normalize,
-        self.hyperparams = hyperparams
-
+        self.normalize = normalize
+        self.hyperparams = hyperparameters
+        self.seed = seed
 
         self.train(seed)
 
@@ -341,20 +333,27 @@ class RLAgent(BaseAgent):
                 self.ascab_train = FlattenObservation(self.ascab_train)
             self.ascab = FilterObservation(self.ascab, filter_keys=self.observation_filter)
         self.ascab = FlattenObservation(self.ascab)
-        if self.path_model is not None and (os.path.exists(self.path_model) or os.path.exists(self.path_model + ".zip")):
-            print(f'Load model from disk: {self.path_model}')
-            self.model = PPO.load(env=self.ascab_train if self.continue_training else self.ascab, path=self.path_model+".zip", print_system_info=False)
-            if self.normalize and not self.ascab_train:
-                self.ascab = Monitor(self.ascab)
-                self.ascab = DummyVecEnv([lambda: self.ascab])
-                self.ascab = VecNormalize.load(self.path_model+"_norm.pkl", self.ascab)
-                self.ascab.training = False
-                self.ascab.norm_reward = False
-            if not self.continue_training:
-                return
+
+        if self.path_model is not None and (os.path.exists(self.path_model)) or os.path.isfile(self.path_model + ".zip"):
+            if os.path.isfile(self.path_model + ".zip"):
+                print(f'Load model from disk: {self.path_model}')
+                self.model = PPO.load(env=self.ascab_train if self.continue_training else self.ascab, path=self.path_model+".zip", print_system_info=False)
+                if self.normalize and not self.ascab_train:
+                    self.ascab = Monitor(self.ascab)
+                    self.ascab = DummyVecEnv([lambda: self.ascab])
+                    self.ascab = VecNormalize.load(self.path_model+"_norm.pkl", self.ascab)
+                    self.ascab.training = False
+                    self.ascab.norm_reward = False
+                if not self.continue_training:
+                    return
         else:
 
             self.ascab = Monitor(self.ascab)
+
+            use_comet = True
+            if use_comet:
+                self.comet_logging()
+
             if self.normalize:
                 self.ascab_train = VecNormalize(DummyVecEnv([lambda: self.ascab_train]), norm_obs=True,
                                                 norm_reward=False)
@@ -370,24 +369,64 @@ class RLAgent(BaseAgent):
             )
             callbacks.append(eval_callback)
 
+        print(f"Training with {self.algo.__name__}!")
+        print(f"Using the following hyperparameters to train:\n {self.hyperparams}") \
+            if self.hyperparams else print("Using default hyperparameters!")
+
         policy = "MlpPolicy" if self.algo != RecurrentPPO else "MlpLstmPolicy"
         self.model = self.algo(policy, self.ascab_train, verbose=1, seed=seed, tensorboard_log=self.path_log,
-                               **self.algo_hyperparams())
+                               **self.hyperparams)
         print(f"Training with seed {seed}...")
         self.model.learn(total_timesteps=self.n_steps, callback=callbacks)
         if self.path_model is not None:
             self.model.save(self.path_model)
 
-    def get_action(self, observation: Optional[dict] = None) -> float:
-        return self.model.predict(observation, deterministic=True)[0]
+    def run(self) -> pd.DataFrame:
+        all_infos = []
+        all_rewards = []
+        n_eval_episodes = self.get_n_eval_episodes()
+        for i in range(n_eval_episodes):
+            observation = self.reset_ascab()
+            total_reward = 0.0
+            terminated = False
+            states = None
+            episode_start = np.ones((1,), dtype=bool)
+            while not terminated:
+                action, states = self.get_action(observation, states=states, episode_start=episode_start)
+                observation, reward, terminated, info = self.step_ascab(action)
+                total_reward += reward
+                episode_start = terminated
+            all_rewards.append(total_reward)
+            print(f"Reward: {total_reward}")
+            all_infos.append(self.ascab.get_wrapper_attr('get_info')(to_dataframe=True)
+                             if not isinstance(self.ascab, VecNormalize)
+                             else self.filter_info(info))
+            if self.render:
+                self.ascab.render()
+        return pd.concat(all_infos, ignore_index=True)
 
+    def step_ascab(self, action):
+        if not isinstance(self.ascab, VecNormalize):
+            observation, reward, terminated, _, info = self.ascab.step(action)
+        else:
+            observation, reward, terminated, info = self.ascab.step(action)
 
-    def algo_hyperparams(self):
-        # include algorithm specific hyperparams here!
-        if self.hyperparams is None:
-            return { "gamma": 0.99, }
-        elif self.hyperparams is not None:
-            return self.hyperparams
+        return observation, reward, terminated, info
+
+    def reset_ascab(self):
+        # check if
+        if not isinstance(self.ascab, VecNormalize):
+            observation, _ = self.ascab.reset()
+        else:
+            observation = self.ascab.reset()
+        return observation
+
+    def get_action(self, observation: Optional[dict] = None, states = None, episode_start = None) -> float:
+            return self.model.predict(observation,
+                                      state=states,
+                                      episode_start=episode_start,
+                                      deterministic=True)
+
 
 if __name__ == "__main__":
     ascab_env = MultipleWeatherASCabEnv(

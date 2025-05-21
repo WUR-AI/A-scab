@@ -350,10 +350,6 @@ class RLAgent(BaseAgent):
 
             self.ascab = Monitor(self.ascab)
 
-            use_comet = True
-            if use_comet:
-                self.comet_logging()
-
             if self.normalize:
                 self.ascab_train = VecNormalize(DummyVecEnv([lambda: self.ascab_train]), norm_obs=True,
                                                 norm_reward=False)

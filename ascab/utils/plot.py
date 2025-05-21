@@ -178,7 +178,6 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
         plt.show()
 
     else:  # if year is True
-        print("Printing per year results!~")
         if not zoom and not stacked:
             cmap = plt.get_cmap('tab10')
 
@@ -277,7 +276,6 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
                 plt.show()
                 plt.close(fig)
         elif zoom and stacked:
-            print("Printing stacked zoomed results!~")
             cmap = plt.get_cmap('tab10')
 
             # assume all your dfs have a 'Year' column already; if not, add it:
@@ -451,7 +449,6 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
                 plt.close(fig_combined)
 
         else:  # if zoom is True:
-            print("Printing zoomed results!~")
             for year in sorted(set().union(*(df["Year"].unique()
                                            for df in results.values()))):
                 fig, axes = make_year_plot(year, results, num_variables, fig_size=10, alpha=alpha)

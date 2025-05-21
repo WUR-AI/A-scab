@@ -4,7 +4,6 @@ import argparse
 
 import numpy as np
 import pandas as pd
-from setuptools.sandbox import save_path
 
 from ascab.utils.plot import plot_normalized_reward, plot_pesticide_use, plot_results, plot_risk, plot_use_vs_risk
 
@@ -70,7 +69,8 @@ def bootstrap_metrics(values, n_boot=10000):
 def main(args):
 
     this_file_path = os.path.abspath(__file__)
-    pkl_dir = os.path.join(os.path.dirname(this_file_path), 'results')
+    pkl_dir = os.path.join(os.path.dirname(this_file_path), 'results', 'fr')
+    print(f"loading results from {pkl_dir}")
     pkl_dir_baselines = pkl_dir
     if args.trunc:
         pkl_dir = os.path.join(os.path.dirname(this_file_path), 'results', 'rppo')

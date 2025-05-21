@@ -181,6 +181,10 @@ class CeresOptimizer:
         initial_actions = np.zeros(len(self.unmasked_indices))
         bounds = Bounds([0] * len(self.unmasked_indices), [1] * len(self.unmasked_indices))
 
+        def print_when_accepted(x, f, accept):
+            if accept:
+                print("accepted x:", x, "f:", f)
+
         print("Starting ceres...")
 
         result = basinhopping(
@@ -193,6 +197,7 @@ class CeresOptimizer:
                 "options": {"maxiter": 30},
             },
             niter=30,
+            callback=print_when_accepted,
         )
 
         self.optimized_actions = result.x
@@ -283,11 +288,35 @@ class NaiveUmbrellaAgent(BaseAgent):
     ):
         super().__init__(ascab=ascab, render=render)
         self.pesticide_filled_to = pesticide_filled_to
+        self.days_after_spraying_threshold = 3
+        self.days_after_spraying = 0
 
     def get_action(self, observation: dict = None) -> float:
+        # sanity check
+        # if forecasted rain tomorrow, and not raining today and it has been at least 3 days since spraying
         if self.ascab.get_wrapper_attr("info")["Forecast_day1_HasRain"] and self.ascab.get_wrapper_attr("info")["Forecast_day1_HasRain"][-1]:
-            return self.pesticide_filled_to
+            if self.ascab.get_wrapper_attr("info")["HasRain"] and not self.ascab.get_wrapper_attr("info")["HasRain"][-1] and \
+                    self.days_after_spraying >= self.days_after_spraying_threshold:
+                return self.pesticide_filled_to
+        # otherwise check if it is raining today, and we have sprayed two days before and it rained yesterday
+        elif len(self.ascab.get_wrapper_attr("info")["HasRain"]) > 2 and self.ascab.get_wrapper_attr("info")["HasRain"][-1]:
+            if self.ascab.get_wrapper_attr("info")["HasRain"][-2] and self.days_after_spraying == 2:
+                return self.pesticide_filled_to
         return 0.0
+
+    def step_ascab(self, action):
+        if action == 0:
+            self.days_after_spraying += 1
+        elif action > 0:
+            self.days_after_spraying = 0
+
+        observation, reward, terminated, _,  info = self.ascab.step(action)
+        return observation, reward, terminated, info
+
+    def reset_ascab(self):
+        self.days_after_spraying = 0
+        observation, _ = self.ascab.reset()
+        return observation
 
 class RandomAgent(BaseAgent):
     def __init__(

@@ -107,8 +107,8 @@ def get_weather_library_from_csv(
             params = dict(
                 latitude=lat,
                 longitude=lon,
-                start_date=slice_.index.min().strftime("%Y-%m-%d"),
-                end_date=slice_.index.max().strftime("%Y-%m-%d"),
+                start_date=year_df.index.min().strftime("%Y-%m-%d"),
+                end_date=year_df.index.max().strftime("%Y-%m-%d"),
             )
 
             key = f"{loc_id}_{params['start_date']}_{params['end_date']}"
@@ -121,7 +121,7 @@ def get_weather_library_from_csv(
                 loaded_weather=weather_df,
             )
 
-        return result
+    return result
 
 
 def get_default_observations() -> list[str]:

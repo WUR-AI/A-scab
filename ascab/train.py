@@ -291,7 +291,7 @@ class RLAgent(BaseAgent):
         ascab_test: Optional[AScabEnv] = None,
         n_steps: int = 5000,
         observation_filter: Optional[list] = None,
-        render: bool = True,
+        render: bool = False,
         path_model: Optional[str] = None,
         path_log: Optional[str] = None,
         rl_algorithm: Union[Type[PPO],Type[TD3],Type[SAC],Type[DQN]] = None,

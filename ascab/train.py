@@ -337,7 +337,7 @@ class RLAgent(BaseAgent):
         if self.path_model is not None and (os.path.exists(self.path_model)) or os.path.isfile(self.path_model + ".zip"):
             if os.path.isfile(self.path_model + ".zip"):
                 print(f'Load model from disk: {self.path_model}')
-                self.model = PPO.load(env=self.ascab_train if self.continue_training else self.ascab, path=self.path_model+".zip", print_system_info=False)
+                self.model = self.algo.load(env=self.ascab_train if self.continue_training else self.ascab, path=self.path_model+".zip", print_system_info=False)
                 if self.normalize and not self.ascab_train:
                     self.ascab = Monitor(self.ascab)
                     self.ascab = DummyVecEnv([lambda: self.ascab])

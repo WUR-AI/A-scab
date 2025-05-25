@@ -42,8 +42,7 @@ def _register_ascab_env(dataset: str = 'train',
                         use_wrapper: str = None,
                         competition_name: str = "test-competition-232675",):
 
-    weather_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "dataset", f"{dataset}.csv")
-
+    weather_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "hackathon", "dataset", f"{dataset}.csv")
     if not os.path.exists(weather_path):
         weather_path = f"/kaggle/input/{competition_name}/{dataset}.csv"
 

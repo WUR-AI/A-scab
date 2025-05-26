@@ -309,9 +309,11 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
                     subfig_left.add_subplot(gs[i, :]) for i, _ in enumerate(variables)
                 ]
 
+                color_mapping = {'Ceres': 2, 'Zero': 0, 'Umbrella': 1, 'RL': 3, 'Random': 4, 'Naive Umbrella': 5}
+
                 # 2) for each key, filter & save that year's data, then plot it
                 for idx, (df_key, df) in enumerate(results.items()):
-                    color = cmap(idx % cmap.N)
+                    color = cmap(color_mapping[df_key])
                     df_year = df[df["Year"] == year].copy()
                     if df_year.empty:
                         continue
@@ -405,7 +407,7 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
                     by_label.values(), by_label.keys(),
                     loc="lower center",
                     bbox_to_anchor=(0.5, -0.05),  # y < 0 ⇒ place *below* the figure
-                    ncol=min(5, len(by_label)),  # wrap into rows if many entries
+                    ncol=min(6, len(by_label)),  # wrap into rows if many entries
                     frameon=False,
                     bbox_transform=fig_combined.transFigure
                 )
@@ -552,11 +554,13 @@ def make_year_plot(year, results_dict, num_variables=6, fig_size=9, alpha=0.5, s
             "Action": container.add_subplot(gs[2, 0]),
         }
 
+        color_mapping = {'Ceres': 2, 'Zero': 0, 'Umbrella': 1, 'RL': 3, 'Random': 4, 'Naive Umbrella': 5}
+
         for idx, (name, df_full) in enumerate(results_dict.items()):
             df = df_full[df_full["Year"] == year]
             if df.empty:
                 continue
-            colour = cmap(idx % cmap.N)
+            colour = cmap(color_mapping[name])
 
             total_reward = df["Reward"].sum()
 
@@ -641,7 +645,7 @@ def make_year_plot(year, results_dict, num_variables=6, fig_size=9, alpha=0.5, s
         # unified legend → use one of the bottom axes
         axes["Risk"].legend(loc="lower center",
                               bbox_to_anchor=(1.5, -0.28),   # centre under grid
-                              ncol=min(5, len(results_dict)),
+                              ncol=min(6, len(results_dict)),
                               frameon=False)
         # fig.tight_layout()
         return fig, axes
@@ -731,6 +735,7 @@ def plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted
     cmap = plt.get_cmap('tab10')
 
     baseline_u = []  # Umbrella
+    baseline_n = []
     baseline_z = []  # Zero
     baseline_c = []
     random_distributions = []
@@ -742,11 +747,12 @@ def plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted
 
 
         # baselines_extracted['Reward'][yr] == [ceres, umbrella, zero]
-        ceres, umb, zro = baselines_extracted['Reward'][yr]
+        ceres, numb, umb, zro,  = baselines_extracted['Reward'][yr]
         lowest_rand = min(random_raw)
-        worst = min(zro, lowest_rand, umb)
+        worst = min(zro, lowest_rand, umb, numb)
         baseline_c.append((ceres - worst) / (ceres - worst))  # =1
         baseline_u.append((umb - worst) / (ceres - worst))
+        baseline_n.append((numb - worst) / (ceres - worst))
         baseline_z.append((zro - worst) / (ceres - worst))
 
         # normalize RL seeds
@@ -771,7 +777,7 @@ def plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted
     stds_random = [np.std(arr) for arr in random_distributions]
 
     x = np.arange(len(years))
-    offsets = {'Ceres': -0.2, 'RL': -0.1, 'Umbrella': 0.0, 'Random': 0.1, 'Zero': 0.2}
+    offsets = {'Ceres': -0.25, 'RL': -0.15, 'Umbrella': -0.05, 'Naive Umbrella': 0.05, 'Random': 0.15, 'Zero': 0.25}
 
     fig, ax = plt.subplots()
 
@@ -781,13 +787,19 @@ def plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted
     offsets = {
         'Ceres': -2 * width,
         'Umbrella': -1 * width,
+        'Naive Umbrella': -1 * width,
         'Zero': 0,
         'RL': 1 * width,
         'Random': 2 * width,
     }
+
+    mid = (len(offsets) - 1) / 2
+    offsets = {agent: (i - mid) * width for i, agent in enumerate(offsets.keys())}
+
     # Bars for baselines
     ax.bar(x + offsets['Ceres'], baseline_c, width, label='Ceres', color=cmap(2), alpha=alpha) #e41a1c
     ax.bar(x + offsets['Umbrella'], baseline_u, width, label='Umbrella', color=cmap(1), alpha=alpha) #ff7f00
+    ax.bar(x + offsets['Naive Umbrella'], baseline_n, width, label='Naive Umbrella', color=cmap(5), alpha=alpha)
     ax.bar(x + offsets['Zero'], baseline_z, width, label='Zero', color=cmap(0), alpha=alpha) #a65628
 
     # Bars with errorbars for distributions
@@ -838,6 +850,7 @@ def plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted, pa
 
     baseline_u = []  # Umbrella
     baseline_z = []  # Zero
+    baseline_n = []
     baseline_c = []
     random_distributions = []
     rl_distributions = []
@@ -848,9 +861,10 @@ def plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted, pa
 
 
         # baselines_extracted['Reward'][yr] == [ceres, umbrella, zero]
-        ceres, umb, zro = baselines_extracted['Pesticide'][yr]
+        ceres, numb, umb, zro,  = baselines_extracted['Pesticide'][yr]
         baseline_c.append(ceres)
         baseline_u.append(umb)
+        baseline_n.append(numb)
         baseline_z.append(zro)
 
         random_distributions.append(random_raw)
@@ -872,12 +886,18 @@ def plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted, pa
         'Ceres': -2 * width,
         'Umbrella': -1 * width,
         'Zero': 0,
+        'Naive Umbrella': -1 * width,
         'RL': 1 * width,
         'Random': 2 * width,
     }
+
+    mid = (len(offsets) - 1) / 2
+    offsets = {agent: (i - mid) * width for i, agent in enumerate(offsets.keys())}
+
     # Bars for baselines
     ax.bar(x + offsets['Ceres'], baseline_c, width, label='Ceres', color=cmap(2), alpha=alpha)
     ax.bar(x + offsets['Umbrella'], baseline_u, width, label='Umbrella', color=cmap(1), alpha=alpha)
+    ax.bar(x + offsets['Naive Umbrella'], baseline_n, width, label='Naive Umbrella', color=cmap(5), alpha=alpha)
     ax.bar(x + offsets['Zero'], baseline_z, width, label='Zero', color=cmap(0), alpha=alpha)
 
     # Bars with errorbars for distributions
@@ -903,10 +923,10 @@ def plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted, pa
     )
 
     if pareto_line:
-        ax1 = pareto_line_plot(x, baseline_c, baseline_u, means, offsets, ax, cmap, alpha)
+        ax1 = pareto_line_plot(x, baseline_c, baseline_u, baseline_n, means, offsets, ax, cmap, alpha)
 
     if avg_line:
-        plot_avg_line(alpha, ax, baseline_c, baseline_u, baseline_z, cmap, means, means_random)
+        plot_avg_line(alpha, ax, baseline_c, baseline_u, baseline_n, baseline_z, cmap, means, means_random)
 
     # Formatting
     ax.set_xticks(x)
@@ -918,7 +938,7 @@ def plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted, pa
     if pareto_line:
         ax1.set_ylabel('Cumulative Pesticide Use')
         ax1.set_yticks(np.linspace(0, 50, 11))
-    ax.legend()
+    ax.legend(loc='upper left')
     # ax.grid(True, axis='y')
 
     if save_path:
@@ -930,18 +950,20 @@ def plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted, pa
     plt.show()
 
 
-def plot_avg_line(alpha, ax, baseline_c, baseline_u, baseline_z, cmap, means, means_random):
+def plot_avg_line(alpha, ax, baseline_c, baseline_u, baseline_n, baseline_z, cmap, means, means_random):
     ax.axhline(np.median(baseline_c), alpha=alpha, color=cmap(2), linestyle='--')
     ax.axhline(np.median(baseline_u), alpha=alpha, color=cmap(1), linestyle='--')
+    ax.axhline(np.median(baseline_n), alpha=alpha, color=cmap(5), linestyle='--')
     ax.axhline(np.median(baseline_z), alpha=alpha, color=cmap(0), linestyle='--')
     ax.axhline(np.median(means), alpha=alpha, color=cmap(3), linestyle='--')
     ax.axhline(np.median(means_random), alpha=alpha, color=cmap(4), linestyle='--')
     return ax
 
 
-def pareto_line_plot(x, baseline_c, baseline_u, means, offsets, ax, cmap, alpha):
+def pareto_line_plot(x, baseline_c, baseline_u, baseline_n, means, offsets, ax, cmap, alpha):
     cumsum_ceres = np.cumsum(baseline_c)
     cumsum_umb = np.cumsum(baseline_u)
+    cumsum_numb = np.cumsum(baseline_n)
     # cumsum_zro = np.cumsum(baseline_z)
     cumsum_rl = np.cumsum(means)
     # cumsum_random = np.cumsum(means_random)
@@ -949,6 +971,7 @@ def pareto_line_plot(x, baseline_c, baseline_u, means, offsets, ax, cmap, alpha)
     ax1 = ax.twinx()
     ax1.plot(x + offsets['Ceres'], cumsum_ceres, color=cmap(2), alpha=alpha, **kwargs_scatter)
     ax1.plot(x + offsets['Umbrella'], cumsum_umb, color=cmap(1), alpha=alpha, **kwargs_scatter)
+    ax1.plot(x + offsets['Naive Umbrella'], cumsum_numb, color=cmap(5), alpha=alpha, **kwargs_scatter)
     # ax1.plot(x + offsets['Zero'], cumsum_zro, color=cmap(0), alpha=alpha, **kwargs_scatter)
     ax1.plot(x + offsets['RL'], cumsum_rl, color=cmap(3), alpha=alpha, **kwargs_scatter)
     # ax1.plot(x + offsets['Random'], cumsum_random, color=cmap(4), alpha=alpha, **kwargs_scatter)
@@ -962,6 +985,7 @@ def plot_risk(dict_extracted, baselines_extracted, random_extracted, pareto_line
     alpha = 0.9
 
     baseline_u = []  # Umbrella
+    baseline_n = []
     baseline_z = []  # Zero
     baseline_c = []
     random_distributions = []
@@ -973,9 +997,10 @@ def plot_risk(dict_extracted, baselines_extracted, random_extracted, pareto_line
 
 
         # baselines_extracted['Reward'][yr] == [ceres, umbrella, zero]
-        ceres, umb, zro = baselines_extracted['Risk'][yr]
+        ceres, numb, umb, zro,  = baselines_extracted['Risk'][yr]
         baseline_c.append(ceres)
         baseline_u.append(umb)
+        baseline_n.append(numb)
         baseline_z.append(zro)
 
         random_distributions.append(random_raw)
@@ -997,12 +1022,18 @@ def plot_risk(dict_extracted, baselines_extracted, random_extracted, pareto_line
         'Ceres': -2 * width,
         'Umbrella': -1 * width,
         'Zero': 0,
+        'Naive Umbrella': 1 * width,
         'RL': 1 * width,
         'Random': 2 * width,
     }
+
+    mid = (len(offsets) - 1) / 2
+    offsets = {agent: (i - mid) * width for i, agent in enumerate(offsets.keys())}
+
     # Bars for baselines
     ax.bar(x + offsets['Ceres'], baseline_c, width, label='Ceres', color=cmap(2), alpha=alpha)
     ax.bar(x + offsets['Umbrella'], baseline_u, width, label='Umbrella', color=cmap(1), alpha=alpha)
+    ax.bar(x + offsets['Naive Umbrella'], baseline_n, width, label='Naive Umbrella', color=cmap(5), alpha=alpha)
     ax.bar(x + offsets['Zero'], baseline_z, width, label='Zero', color=cmap(0), alpha=alpha)
 
     # Bars with errorbars for distributions
@@ -1028,10 +1059,10 @@ def plot_risk(dict_extracted, baselines_extracted, random_extracted, pareto_line
     )
 
     if pareto_line:
-        ax1 = pareto_line_plot(x, baseline_c, baseline_u, means, offsets, ax, cmap, alpha)
+        ax1 = pareto_line_plot(x, baseline_c, baseline_u, baseline_n, means, offsets, ax, cmap, alpha)
 
     if avg_line:
-        plot_avg_line(alpha, ax, baseline_c, baseline_u, baseline_z, cmap, means, means_random)
+        plot_avg_line(alpha, ax, baseline_c, baseline_u, baseline_n, baseline_z, cmap, means, means_random)
 
     # Formatting
     ax.set_xticks(x)

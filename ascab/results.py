@@ -69,12 +69,12 @@ def bootstrap_metrics(values, n_boot=10000):
 def main(args):
 
     this_file_path = os.path.abspath(__file__)
-    pkl_dir = os.path.join(os.path.dirname(this_file_path), 'results', 'fr')
+    pkl_dir = os.path.join(os.path.dirname(this_file_path), 'results')
     print(f"loading results from {pkl_dir}")
     pkl_dir_baselines = pkl_dir
     if args.trunc:
         pkl_dir = os.path.join(os.path.dirname(this_file_path), 'results', 'rppo')
-    baseline_pickle_names = ['ceres.pkl', 'random.pkl', 'umbrella.pkl', 'zero.pkl']
+    baseline_pickle_names = ['ceres.pkl', 'random.pkl', 'umbrella.pkl', 'naive_umbrella.pkl', 'zero.pkl']
 
     results_dict = {}
     baselines_dict = {}
@@ -101,7 +101,7 @@ def main(args):
         "rl": dict_extracted,
     }
 
-    baseline_names = ["Ceres", "Umbrella", "Zero"]
+    baseline_names = ["Ceres", "Umbrella", "Naive Umbrella", "Zero"]
 
 
     for category in ["Reward", "Pesticide", "Risk"]:
@@ -126,10 +126,11 @@ def main(args):
         plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted, save_path=pkl_dir)
         plot_pesticide_use(dict_extracted, baselines_extracted, random_extracted, pareto_line=True, save_path=pkl_dir)
         plot_risk(dict_extracted, baselines_extracted, random_extracted, avg_line=True, save_path=pkl_dir)
-        plot_use_vs_risk(dict_extracted, baselines_extracted, random_extracted)
+        # plot_use_vs_risk(dict_extracted, baselines_extracted, random_extracted)
 
         dict_to_plot = {"Zero":baselines_dict["zero"],
              "Umbrella":baselines_dict["umbrella"],
+             "Naive Umbrella":baselines_dict["naive_umbrella"],
              "Ceres":baselines_dict["ceres"],
              "RL":results_dict[list(results_dict.keys())[1]],
              "Random":random_dict[next(iter(random_dict))],}
@@ -146,11 +147,11 @@ def main(args):
     statistics = True
     if statistics:
         # Define agent groups
-        baseline_agents = ["Ceres", "Umbrella", "Zero"]
+        baseline_agents = ["Ceres", "NUmbrella", "Umbrella", "Zero"]
         seed_names = [
             'seed101871', 'seed104838', 'seed354986', 'seed427066',
             'seed486074', 'seed677211', 'seed683253', 'seed710178',
-            'seed89331'
+            'seed89331',
         ]
 
         for x in ['Reward', 'Pesticide', 'Risk']:

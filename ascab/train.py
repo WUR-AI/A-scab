@@ -13,13 +13,13 @@ from ascab.utils.plot import plot_results
 from ascab.utils.generic import get_dates
 from ascab.env.env import AScabEnv, MultipleWeatherASCabEnv, ActionConstrainer, get_weather_library, get_default_start_of_season, get_default_end_of_season
 
-import torch as th
+import gymnasium as gym
 
 try:
     from stable_baselines3 import PPO, SAC, TD3, DQN, HER
     from stable_baselines3.common.callbacks import EvalCallback, BaseCallback
     from stable_baselines3.common.monitor import Monitor
-    from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+    from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize, VecMonitor
 except ImportError:
     PPO = None
 
@@ -27,6 +27,57 @@ try:
     from sb3_contrib import RecurrentPPO
 except ImportError:
     RecurrentPPO = None
+
+
+def find_attr_in_wrapped_env(env_instance, attr_name, default=None):
+    """
+    Recursively searches for an attribute within a Gymnasium/SB3 wrapped environment stack.
+
+    Args:
+        env_instance: The top-level Gymnasium environment instance (can be wrapped).
+        attr_name (str): The name of the attribute to find.
+        default: The value to return if the attribute is not found.
+
+    Returns:
+        The value of the attribute if found, otherwise the default value.
+    """
+    current_env = env_instance
+    visited_envs = set()  # To prevent infinite loops with circular references
+
+    while current_env is not None:
+        # Check if attribute exists on the current environment object
+        if hasattr(current_env, attr_name):
+            return getattr(current_env, attr_name)
+
+        # Mark current env as visited
+        env_id = id(current_env)
+        if env_id in visited_envs:
+            # We've seen this env before, preventing infinite loop (e.g., if .env points back)
+            break
+        visited_envs.add(env_id)
+
+        # Try to go deeper
+        next_env_candidate = None
+
+        # 1. Standard Gym/SB3 Wrapper (e.g., Monitor, FlattenObservation)
+        if hasattr(current_env, 'env') and isinstance(current_env.env, gym.Env):
+            next_env_candidate = current_env.env
+        # 2. Stable-Baselines3 VecEnv (e.g., DummyVecEnv, SubprocVecEnv)
+        elif hasattr(current_env, 'envs') and isinstance(current_env.envs, list) and len(current_env.envs) > 0:
+            # For VecEnvs, we assume all environments in the list are identical, and we search the first one.
+            next_env_candidate = current_env.envs[0]
+        # 3. Handle VecNormalize specifically, as its .env is often a VecEnv
+        elif isinstance(current_env, (VecMonitor)) and hasattr(current_env, 'env') and isinstance(current_env.env,
+                                                                                                  DummyVecEnv):
+            next_env_candidate = current_env.env  # Go from VecMonitor to the underlying VecEnv
+
+        if next_env_candidate is None:
+            # No more standard ways to go deeper
+            break
+
+        current_env = next_env_candidate
+
+    return default
 
 class BaseAgent(abc.ABC):
     def __init__(self, ascab: Optional[AScabEnv] = None, render: bool = False):
@@ -68,11 +119,10 @@ class BaseAgent(abc.ABC):
         return observation
 
     def get_n_eval_episodes(self):
-        if isinstance(self.ascab, VecNormalize):
-            n_eval_episodes = len(self.ascab.get_attr('weather_keys')[0]) if hasattr(self.ascab.unwrapped.envs[0], "weather_keys") else 1
+        if find_attr_in_wrapped_env(self.ascab, 'weather_keys'):
+            return len(find_attr_in_wrapped_env(self.ascab, 'weather_keys'))
         else:
-            n_eval_episodes = len(self.ascab.unwrapped.weather_keys) if hasattr(self.ascab.unwrapped, "weather_keys") else 1
-        return n_eval_episodes
+            return 1
 
     @staticmethod
     def filter_info(info):

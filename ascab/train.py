@@ -8,6 +8,7 @@ from scipy.optimize import basinhopping, Bounds
 import numpy as np
 
 from gymnasium.wrappers import FlattenObservation, FilterObservation
+from stable_baselines3.common.env_util import is_wrapped
 
 from ascab.utils.plot import plot_results
 from ascab.utils.generic import get_dates
@@ -17,6 +18,7 @@ import gymnasium as gym
 
 try:
     from stable_baselines3 import PPO, SAC, TD3, DQN, HER
+    from stable_baselines3.common.base_class import BaseAlgorithm
     from stable_baselines3.common.callbacks import EvalCallback, BaseCallback
     from stable_baselines3.common.monitor import Monitor
     from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize, VecMonitor
@@ -337,14 +339,14 @@ class CustomEvalCallback(EvalCallback):
 class RLAgent(BaseAgent):
     def __init__(
         self,
+        ascab_test: Optional[AScabEnv],
         ascab_train: Optional[AScabEnv] = None,
-        ascab_test: Optional[AScabEnv] = None,
         n_steps: int = 5000,
         observation_filter: Optional[list] = None,
         render: bool = False,
         path_model: Optional[str] = None,
         path_log: Optional[str] = None,
-        rl_algorithm: Union[Type[PPO],Type[TD3],Type[SAC],Type[DQN]] = None,
+        rl_algorithm: Union[Type[BaseAlgorithm]] = None,
         discrete_actions: bool = False,
         normalize: bool = True,
         seed: int = 42,
@@ -366,9 +368,16 @@ class RLAgent(BaseAgent):
         self.hyperparams = hyperparameters
         self.seed = seed
 
-        self.train(seed)
+        if self.ascab_train is None:
+            print('Training environment is not provided; going into evaluation mode!...')
+            assert self.path_model is not None, "path_model must be set to go to evaluation mode!"
+            self.evaluate(seed)
+        else:
+            print('Training environment is provided; going into training mode!...')
+            self.train(seed)
 
     def train(self, seed: int = 42):
+
         if PPO is None:
             raise ImportError(
                 "stable-baselines3 is not installed. Please install it to use the rl_agent."
@@ -378,42 +387,30 @@ class RLAgent(BaseAgent):
 
         if self.observation_filter:
             print(f"Filter observations: {self.observation_filter}")
-            if self.ascab_train:
-                self.ascab_train = FilterObservation(self.ascab_train, filter_keys=self.observation_filter)
-                self.ascab_train = FlattenObservation(self.ascab_train)
+            self.ascab_train = FilterObservation(self.ascab_train, filter_keys=self.observation_filter)
             self.ascab = FilterObservation(self.ascab, filter_keys=self.observation_filter)
+        self.ascab_train = FlattenObservation(self.ascab_train)
         self.ascab = FlattenObservation(self.ascab)
 
-        if self.path_model is not None and (os.path.exists(self.path_model)) or os.path.isfile(self.path_model + ".zip"):
-            if os.path.isfile(self.path_model + ".zip"):
-                print(f'Load model from disk: {self.path_model}')
-                self.model = self.algo.load(env=self.ascab_train if self.continue_training else self.ascab, path=self.path_model+".zip", print_system_info=False)
-                if self.normalize and not self.ascab_train:
-                    self.ascab = Monitor(self.ascab)
-                    self.ascab = DummyVecEnv([lambda: self.ascab])
-                    self.ascab = VecNormalize.load(self.path_model+"_norm.pkl", self.ascab)
-                    self.ascab.training = False
-                    self.ascab.norm_reward = False
-                if not self.continue_training:
-                    return
-        else:
+        self.ascab = Monitor(self.ascab)
 
-            self.ascab = Monitor(self.ascab)
+        if self.normalize:
+            assert not self.is_wrapped(self.ascab, DummyVecEnv), "Already wrapped with VecEnv!"
+            assert not self.is_wrapped(self.ascab_train, DummyVecEnv), "Already wrapped with VecEnv!"
 
-            if self.normalize:
-                self.ascab_train = VecNormalize(DummyVecEnv([lambda: self.ascab_train]), norm_obs=True,
-                                                norm_reward=False)
-                self.ascab = VecNormalize(DummyVecEnv([lambda: self.ascab]), norm_obs=True, norm_reward=False,
-                                          training=False)
-            eval_callback = CustomEvalCallback(
-                eval_env=self.ascab,
-                eval_freq=1500,
-                deterministic=True,
-                render=False,
-                n_eval_episodes=len(self.ascab.weather_keys) if hasattr(self.ascab, "weather_keys") else 1,
-                best_model_save_path=self.path_model,
-            )
-            callbacks.append(eval_callback)
+            self.ascab_train = VecNormalize(DummyVecEnv([lambda: self.ascab_train]), norm_obs=True,
+                                            norm_reward=False)
+            self.ascab = VecNormalize(DummyVecEnv([lambda: self.ascab]), norm_obs=True, norm_reward=False,
+                                      training=False)
+        eval_callback = CustomEvalCallback(
+            eval_env=self.ascab,
+            eval_freq=1500,
+            deterministic=True,
+            render=False,
+            n_eval_episodes=self.get_n_eval_episodes(),
+            best_model_save_path=self.path_model,
+        )
+        callbacks.append(eval_callback)
 
         print(f"Training with {self.algo.__name__}!")
         print(f"Using the following hyperparameters to train:\n {self.hyperparams}") \
@@ -424,11 +421,68 @@ class RLAgent(BaseAgent):
                                **self.hyperparams)
         print(f"Training with seed {seed}...")
         self.model.learn(total_timesteps=self.n_steps, callback=callbacks)
+        print(f"Training finished! Attempting to save model...")
         if self.path_model is not None:
             self.model.save(self.path_model)
             if self.normalize:
+                print(f"Model saved to {self.path_model}!")
+                print(f"Attempting to save normalization object...")
                 self.ascab_train.save(self.path_model + "_norm.pkl")
+                print(f"Normalization object saved to {self.path_model}_norm.pkl!")
+            print("Running trained model in A-scab environment...!")
             self.run()
+
+    def evaluate(self, seed: int = 42):
+        if self.observation_filter:
+            self.ascab = FilterObservation(self.ascab, filter_keys=self.observation_filter)
+        self.ascab = FlattenObservation(self.ascab)
+
+        print("Checking if model exists in path_model...")
+
+        if self.model_path_checks():
+            print(f'Load model from disk: {self.path_model}')
+            self.model = self.algo.load(env=self.ascab, path=self.path_model+".zip", print_system_info=False)
+            if self.normalize:
+                self.ascab = Monitor(self.ascab)
+                self.ascab = DummyVecEnv([lambda: self.ascab])
+                print(f'Load normalization parameters from disk: {self.path_model+"_norm.pkl"}')
+                self.ascab = VecNormalize.load(self.path_model+"_norm.pkl", self.ascab)
+                self.ascab.training = False
+                self.ascab.norm_reward = False
+            print("Running trained model in A-scab environment...!")
+            self.run()
+        else:
+            print(f"No model found at path_model: {self.path_model}")
+            print("Make sure path_model points to your Stable Baselines file! (without the .zip extension)")
+
+    def model_path_checks(self):
+        if os.path.isfile(self.path_model):
+            print(f"Found it!")
+            return True
+        elif not os.path.isfile(self.path_model) and os.path.isfile(self.path_model + ".zip"):
+            print(f"Found it!")
+            return True
+        else:
+            return False
+
+    def wrap_env(self, env, wrapper_class):
+        if not is_wrapped(env, wrapper_class):
+            if isinstance(wrapper_class, FilterObservation):
+                return FilterObservation(env, filter_keys=self.observation_filter)
+            elif isinstance(wrapper_class, FlattenObservation):
+                return FlattenObservation(env)
+        else:
+            return env
+
+    @staticmethod
+    def is_wrapped(env, wrapper_class):
+        """Check if the env is wrapped with wrapper_class."""
+        while hasattr(env, 'env'):
+            if isinstance(env, wrapper_class):
+                return True
+            env = env.env
+        return isinstance(env, wrapper_class)  # Also check the final unwrapped env
+
 
     def run(self) -> pd.DataFrame:
         all_infos = []

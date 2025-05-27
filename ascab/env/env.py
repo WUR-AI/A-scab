@@ -201,14 +201,14 @@ class AScabEnv(gym.Env):
         self.remaining_sprays: int = self.spray_budget
         self.beta: float = 0.025
 
-        observation_filter = get_observation_set(truncated_observations)
+        self.observation_filter = get_observation_set(truncated_observations)
 
         self.observation_space = gym.spaces.Dict({
-            name: gym.spaces.Box(0, np.inf, shape=(), dtype=np.float32)
+            name: gym.spaces.Box(-np.inf, np.inf, shape=(), dtype=np.float32)
             for name, _ in self.info.items()
-            if name in observation_filter
-            or "Forecast" in observation_filter
-               and name.startswith("Forecast_") and name.split('_', 2)[-1] in observation_filter
+            if name in self.observation_filter
+            or "Forecast" in self.observation_filter
+               and name.startswith("Forecast_") and name.split('_', 2)[-1] in self.observation_filter
         })
         self.is_discrete = discrete_actions
         self.action_space = gym.spaces.Box(0, 1.0, shape=(), dtype=np.float32) \

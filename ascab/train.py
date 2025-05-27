@@ -348,7 +348,6 @@ class RLAgent(BaseAgent):
         discrete_actions: bool = False,
         normalize: bool = True,
         seed: int = 42,
-        continue_training: bool = False,
         hyperparameters: dict = {},
     ):
         super().__init__(ascab=ascab_train, render=render)
@@ -361,7 +360,6 @@ class RLAgent(BaseAgent):
         self.model = None
         self.algo = rl_algorithm
         self.is_discrete = discrete_actions
-        self.continue_training = continue_training
         self.normalize = normalize
         self.hyperparams = hyperparameters
         self.seed = seed
@@ -387,19 +385,17 @@ class RLAgent(BaseAgent):
         if self.path_model is not None and (os.path.exists(self.path_model)) or os.path.isfile(self.path_model + ".zip"):
             if os.path.isfile(self.path_model + ".zip"):
                 print(f'Load model from disk: {self.path_model}')
-                self.model = self.algo.load(env=self.ascab_train if self.continue_training else self.ascab, path=self.path_model+".zip", print_system_info=False)
-                if self.normalize and not self.ascab_train:
+                self.model = self.algo.load(env=self.ascab, path=self.path_model+".zip", print_system_info=False)
+                if self.normalize:
                     self.ascab = Monitor(self.ascab)
                     self.ascab = DummyVecEnv([lambda: self.ascab])
+                    print(f'load {self.path_model+"_norm.pkl"}')
                     self.ascab = VecNormalize.load(self.path_model+"_norm.pkl", self.ascab)
                     self.ascab.training = False
                     self.ascab.norm_reward = False
-                if not self.continue_training:
-                    return
+                return
         else:
-
             self.ascab = Monitor(self.ascab)
-
             if self.normalize:
                 self.ascab_train = VecNormalize(DummyVecEnv([lambda: self.ascab_train]), norm_obs=True,
                                                 norm_reward=False)

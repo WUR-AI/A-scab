@@ -426,8 +426,8 @@ class RLAgent(BaseAgent):
         self.model.learn(total_timesteps=self.n_steps, callback=callbacks)
         if self.path_model is not None:
             self.model.save(self.path_model)
-            print(self.ascab_train)
-            self.ascab_train.save(self.path_model + "_norm.pkl")
+            if self.normalize:
+                self.ascab_train.save(self.path_model + "_norm.pkl")
             self.run()
 
     def run(self) -> pd.DataFrame:
@@ -446,7 +446,8 @@ class RLAgent(BaseAgent):
                 total_reward += reward
                 episode_start = terminated
             all_rewards.append(total_reward)
-            print(f"Reward: {total_reward}")
+            tag = info["Date"][0].year
+            print(f'Reward {tag}: {total_reward}')
             all_infos.append(self.ascab.get_wrapper_attr('get_info')(to_dataframe=True)
                              if not isinstance(self.ascab, VecNormalize)
                              else self.filter_info(info))

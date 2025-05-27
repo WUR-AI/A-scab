@@ -8,7 +8,6 @@ from scipy.optimize import basinhopping, Bounds
 import numpy as np
 
 from gymnasium.wrappers import FlattenObservation, FilterObservation
-from stable_baselines3.common.env_util import is_wrapped
 
 from ascab.utils.plot import plot_results
 from ascab.utils.generic import get_dates
@@ -464,15 +463,6 @@ class RLAgent(BaseAgent):
             return True
         else:
             return False
-
-    def wrap_env(self, env, wrapper_class):
-        if not is_wrapped(env, wrapper_class):
-            if isinstance(wrapper_class, FilterObservation):
-                return FilterObservation(env, filter_keys=self.observation_filter)
-            elif isinstance(wrapper_class, FlattenObservation):
-                return FlattenObservation(env)
-        else:
-            return env
 
     @staticmethod
     def is_wrapped(env, wrapper_class):

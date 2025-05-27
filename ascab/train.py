@@ -446,7 +446,10 @@ class RLAgent(BaseAgent):
                 total_reward += reward
                 episode_start = terminated
             all_rewards.append(total_reward)
-            tag = info["Date"][0].year
+            if not isinstance(self.ascab, VecNormalize):
+                tag = self.ascab.get_wrapper_attr('get_info')["Date"][0].year
+            else:
+                tag=info[0]["Date"][0].year
             print(f'Reward {tag}: {total_reward}')
             all_infos.append(self.ascab.get_wrapper_attr('get_info')(to_dataframe=True)
                              if not isinstance(self.ascab, VecNormalize)

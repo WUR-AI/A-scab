@@ -426,7 +426,7 @@ class RLAgent(BaseAgent):
         self.model.learn(total_timesteps=self.n_steps, callback=callbacks)
         if self.path_model is not None:
             self.model.save(self.path_model)
-            self.ascab_train.save(self.path_model + "_norm.pkl")
+            #self.ascab_train.save(self.path_model + "_norm.pkl")
             self.run()
 
     def run(self) -> pd.DataFrame:

@@ -423,8 +423,8 @@ class RLAgent(BaseAgent):
         print(f"Training finished! Attempting to save model...")
         if self.path_model is not None:
             self.model.save(self.path_model)
+            print(f"Model saved to {self.path_model}!")
             if self.normalize:
-                print(f"Model saved to {self.path_model}!")
                 print(f"Attempting to save normalization object...")
                 self.ascab_train.save(self.path_model + "_norm.pkl")
                 print(f"Normalization object saved to {self.path_model}_norm.pkl!")

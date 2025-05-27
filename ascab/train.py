@@ -420,16 +420,17 @@ class RLAgent(BaseAgent):
                                **self.hyperparams)
         print(f"Training with seed {seed}...")
         self.model.learn(total_timesteps=self.n_steps, callback=callbacks)
-        print(f"Training finished! Attempting to save model...")
+        print(f"Training finished!")
         if self.path_model is not None:
+            print(f"Attempting to save model...")
             self.model.save(self.path_model)
             print(f"Model saved to {self.path_model}!")
             if self.normalize:
                 print(f"Attempting to save normalization object...")
                 self.ascab_train.save(self.path_model + "_norm.pkl")
                 print(f"Normalization object saved to {self.path_model}_norm.pkl!")
-            print("Running trained model in A-scab environment...!")
-            self.run()
+        print("Running trained model in A-scab environment...!")
+        self.run()
 
     def evaluate(self, seed: int = 42):
         if self.observation_filter:

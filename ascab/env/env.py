@@ -373,6 +373,19 @@ class AScabEnv(gym.Env):
         self.since_last_spray = 0
         self.remaining_sprays = self.spray_budget
 
+    def override_observation_space(self, observation_keys):
+        """
+        This class method can override the observation space
+        """
+        self.observation_space = gym.spaces.Dict({
+            name: gym.spaces.Box(-np.inf, np.inf, shape=(), dtype=np.float32)
+            for name, _ in self.info.items()
+            if name in observation_keys
+        })
+
+    def get_forecast_keys(self):
+        return [x for x in self.info.keys() if 'Forecast_' in x]
+
 
 class MultipleWeatherASCabEnv(AScabEnv):
     def __init__(self,

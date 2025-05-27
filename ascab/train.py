@@ -386,6 +386,11 @@ class RLAgent(BaseAgent):
 
         if self.observation_filter:
             print(f"Filter observations: {self.observation_filter}")
+            if set(self.observation_filter) != set(list(self.ascab.unwrapped.observation_space.keys())):
+                print("Overriding observation space with defined observation filter!")
+                self.ascab_train.unwrapped.override_observation_space(observation_keys=self.observation_filter)
+                self.ascab.override_observation_space(observation_keys=self.observation_filter)
+
             self.ascab_train = FilterObservation(self.ascab_train, filter_keys=self.observation_filter)
             self.ascab = FilterObservation(self.ascab, filter_keys=self.observation_filter)
         self.ascab_train = FlattenObservation(self.ascab_train)
@@ -433,6 +438,10 @@ class RLAgent(BaseAgent):
 
     def evaluate(self, seed: int = 42):
         if self.observation_filter:
+            print(f"Filter observations: {self.observation_filter}")
+            if set(self.observation_filter) != set(list(self.ascab.unwrapped.observation_space.keys())):
+                print("Overriding observation space with defined observation filter!")
+                self.ascab.unwrapped.override_observation_space(observation_keys=self.observation_filter)
             self.ascab = FilterObservation(self.ascab, filter_keys=self.observation_filter)
         self.ascab = FlattenObservation(self.ascab)
 

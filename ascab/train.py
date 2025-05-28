@@ -389,7 +389,7 @@ class RLAgent(BaseAgent):
             if set(self.observation_filter) != set(list(self.ascab.unwrapped.observation_space.keys())):
                 print("Overriding observation space with defined observation filter!")
                 self.ascab_train.unwrapped.override_observation_space(observation_keys=self.observation_filter)
-                self.ascab.override_observation_space(observation_keys=self.observation_filter)
+                self.ascab.unwrapped.override_observation_space(observation_keys=self.observation_filter)
 
             self.ascab_train = FilterObservation(self.ascab_train, filter_keys=self.observation_filter)
             self.ascab = FilterObservation(self.ascab, filter_keys=self.observation_filter)

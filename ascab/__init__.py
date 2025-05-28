@@ -78,6 +78,5 @@ def _register_ascab_env(dataset: str = 'train',
 print(f"Please wait a few seconds; importing the AscabGym modules...")
 for data in ['train', 'val']:
     for discrete in [True, False]:
-        for wrapper in [None, 'ConditionalAgents']:
-            _register_ascab_env(dataset=data, is_discrete=discrete, use_wrapper=wrapper)
+        _register_ascab_env(dataset=data, is_discrete=discrete, use_wrapper=None)
 print(f"Imported successfully!")

@@ -80,6 +80,19 @@ def find_attr_in_wrapped_env(env_instance, attr_name, default=None):
 
     return default
 
+def print_histogram_nicely(name, histogram):
+    if histogram is None:
+        print(f"{name} histogram: Not found.")
+        return
+
+    # Convert np.str_ keys to standard Python strings if they exist
+    cleaned_histogram = {str(k): v for k, v in histogram.items()}
+
+    print(f"\n--- {name} Histogram ---")
+    for key, value in cleaned_histogram.items():
+        print(f"  {key}: {value}")
+    print("-----------------------\n")
+
 class BaseAgent(abc.ABC):
     def __init__(self, ascab: Optional[AScabEnv] = None, render: bool = False):
         self.ascab = ascab or AScabEnv()
@@ -637,8 +650,10 @@ if __name__ == "__main__":
 
         ascab_rl = RLAgent(ascab_train=ascab_train, ascab_test=ascab_test, observation_filter=observation_filter, n_steps=100,
                            render=False, path_model=save_path, path_log=log_path, rl_algorithm=algo)
-        print(ascab_train.histogram)
-        print(ascab_test.histogram)
+
+        print_histogram_nicely("Training Environment", find_attr_in_wrapped_env(ascab_train, 'histogram'))
+        print_histogram_nicely("Test Environment", find_attr_in_wrapped_env(ascab_test, 'histogram'))
+
         ascab_rl_results = ascab_rl.run()
 
     else:

@@ -270,7 +270,7 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
                     frameon=False
                 )
                 if save_path:
-                    out_path = os.path.join(save_path, f"plot_{year}.png")
+                    out_path = os.path.join(os.path.dirname(save_path), f"plot_{year}.png")
                     print(f'save {out_path}')
                     plt.savefig(out_path, bbox_inches="tight", format=save_type, dpi=200)
                 plt.show()
@@ -441,7 +441,7 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
                         #     )
 
                 if save_path:
-                    out_path = os.path.join(save_path, f"plot_{year}_stacked.png")
+                    out_path = os.path.join(os.path.dirname(save_path), f"plot_{year}_stacked.png")
                     print(f'save {out_path}')
                     plt.savefig(out_path, bbox_inches="tight", format=save_type, dpi=200)
                 # plt.tight_layout()

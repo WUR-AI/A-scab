@@ -342,7 +342,7 @@ class NewBestCallback(BaseCallback):
     def _on_step(self) -> bool:
 
         if self.training_env.has_attr('save') and isinstance(self.training_env, VecNormalize):
-            self.training_env.save(os.path.join(self.best_model_save_path+"_norm.pkl"))
+            self.training_env.save(os.path.join(self.best_model_save_path, "best_model_norm.pkl"))
 
         return True
 

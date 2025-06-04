@@ -336,14 +336,14 @@ class CustomEvalCallback(EvalCallback):
 
 
 class NewBestCallback(BaseCallback):
-    def __init__(self, best_model_save_path: str, verbose: int = 0):
-        super(NewBestCallback, self).__init__(verbose)
-        # Store the path provided by the parent EvalCallback
-        self.best_model_save_path = best_model_save_path
+    def __init__(self, *args, **kwargs):
+        super(NewBestCallback, self).__init__(*args, **kwargs)
 
     def _on_step(self) -> bool:
-        if isinstance(self.training_env, VecNormalize):
-            self.training_env.save(os.path.join(self.best_model_save_path, "best_model.pkl"))
+
+        if self.training_env.has_attr('save') and isinstance(self.training_env, VecNormalize):
+            self.training_env.save(os.path.join(self.best_model_save_path, "best_model_norm.pkl"))
+
         return True
 
 
@@ -425,7 +425,7 @@ class RLAgent(BaseAgent):
             render=False,
             n_eval_episodes=self.get_n_eval_episodes(),
             best_model_save_path=self.path_model,
-            callback_on_new_best=NewBestCallback(best_model_save_path=self.path_model)
+            callback_on_new_best=NewBestCallback()
         )
         callbacks.append(eval_callback)
 

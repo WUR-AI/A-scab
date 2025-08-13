@@ -1,7 +1,7 @@
 import os
 import gymnasium as gym
 
-from .env.env import MultipleWeatherASCabEnv, PenaltyWrapper, ActionConstrainer, get_weather_library_from_csv
+from .env.env import MultipleWeatherASCabEnv, ActionConstrainer, get_weather_library_from_csv
 
 do_check_env = False
 if do_check_env:

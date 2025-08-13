@@ -23,21 +23,6 @@ def _wrapper_picker(wrapper):
                 risk_period=True
             ),
         )
-    elif wrapper == "Penalty":
-        return(
-            PenaltyWrapper.wrapper_spec(
-                penalty=0.025
-            )
-        )
-    elif wrapper == "ConditionalAgentsPenalty":
-        return (
-            ActionConstrainer.wrapper_spec(
-                risk_period=True
-            ),
-            PenaltyWrapper.wrapper_spec(
-                penalty=0.025
-            )
-        )
 
 def _register_ascab_env(dataset: str = 'train',
                         is_discrete: bool = True,

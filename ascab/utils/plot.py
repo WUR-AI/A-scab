@@ -12,14 +12,7 @@ from ascab.model.infection import InfectionRate, get_pat_threshold
 
 
 def get_default_plot_variables() -> list:
-    return [
-        "Precipitation",
-         "AscosporeMaturation",
-         "Discharge",
-         "Pesticide",
-         "Risk",
-         "Action",
-    ]
+    return ["Precipitation", "AscosporeMaturation", "Discharge", "Pesticide", "Risk", "Action"]
 
 
 def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
@@ -35,9 +28,8 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
 
     if variables is None:
         variables = list(results.values())[0].columns.tolist()
-        variables.reverse()  # Reverse the order of the variables
+        variables.reverse()
     else:
-        # Check if the provided variables exist in the DataFrames
         for df in results.values():
             missing_variables = [var for var in variables if var not in df.columns]
             if missing_variables:
@@ -373,7 +365,7 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
 
                 # ------------------- stacked part
 
-                _, axes_zoom = make_year_plot(year, results, num_variables, fig_size=fig_size, alpha=alpha,
+                _, axes_zoom = make_year_plot(year, results, fig_size=fig_size, alpha=alpha,
                                                      stacked=stacked, container=subfig_right)
 
                 for i, variable in enumerate(variables):
@@ -432,26 +424,17 @@ def plot_results(results: [Union[dict[str, pd.DataFrame], pd.DataFrame]],
                             )
                             fig_combined.add_artist(conn)
 
-                        # coords = {'p1': ([start_date, ])}
-                        # for k, s, e in coords.items():
-                        #     fig_combined.add_artist(
-                        #         Line2D([0.02, 0.98], [0.05, 0.95],  # x,y in Figure coords (0-1)
-                        #                transform=fig_combined.transFigure,  # <─ key: use Figure coords
-                        #                color=color_line, lw=1, ls="--", zorder=0)
-                        #     )
-
                 if save_path:
                     out_path = os.path.join(os.path.dirname(save_path), f"plot_{year}_stacked.png")
                     print(f'save {out_path}')
                     plt.savefig(out_path, bbox_inches="tight", format=save_type, dpi=200)
-                # plt.tight_layout()
                 plt.show()
                 plt.close(fig_combined)
 
         else:  # if zoom is True:
             for year in sorted(set().union(*(df["Year"].unique()
                                            for df in results.values()))):
-                fig, axes = make_year_plot(year, results, num_variables, fig_size=10, alpha=alpha)
+                fig, axes = make_year_plot(year, results, fig_size=10, alpha=alpha)
                 if fig is None:
                     continue
 
@@ -516,7 +499,7 @@ def get_thresholds_per_year(year, results_dict):
     return start_date, end_date
 
 
-def make_year_plot(year, results_dict, num_variables=6, fig_size=9, alpha=0.5, stacked=False, container=None):
+def make_year_plot(year, results_dict, fig_size=9, alpha=0.5, stacked=False, container=None):
     """
     results_dict:  {name -> full-year dataframe}
                    each df must have columns
@@ -752,9 +735,6 @@ def plot_normalized_reward(dict_extracted, baselines_extracted, random_extracted
 
         random_norm = (random_raw - worst) / (ceres - worst)
         random_distributions.append(random_norm)
-
-
-
 
     # # Compute medians and IQRs for RL
     # medians = [np.median(arr) for arr in rl_distributions]

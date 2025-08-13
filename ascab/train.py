@@ -627,9 +627,6 @@ if __name__ == "__main__":
         algo = PPO
         log_path = os.path.join(os.getcwd(), "log")
         save_path = os.path.join(os.getcwd(), f"rl_agent_train_odd_{algo.__name__}")
-        # with open(save_path + "cer.pkl", "wb") as f:
-        #     print(f"saved to {save_path+'cer.pkl'}")
-        #     pickle.dump(ceres_results, file=f)
         ascab_train = MultipleWeatherASCabEnv(
             weather_data_library=get_weather_library(
                 locations=[(42.1620, 3.0924), (42.1620, 3.0), (42.5, 2.5), (41.5, 3.0924), (42.5, 3.0924)],
@@ -671,4 +668,3 @@ if __name__ == "__main__":
                  save_path=os.path.join(os.getcwd(), "results.png"),
                  variables=["Precipitation", "LeafWetness", "AscosporeMaturation", "Discharge", "Pesticide", "Risk",
                             "Action", "Phenology"])
-

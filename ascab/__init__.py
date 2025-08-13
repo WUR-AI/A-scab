@@ -1,16 +1,18 @@
 import os
 import gymnasium as gym
-from gymnasium.utils.env_checker import check_env
 
 from .env.env import MultipleWeatherASCabEnv, PenaltyWrapper, ActionConstrainer, get_weather_library_from_csv
 
-# check_env(MultipleWeatherASCabEnv(
-#     weather_data_library=get_weather_library_from_csv(os.path.join(os.path.dirname(os.path.dirname(__file__)), "dataset", f"train.csv")),
-#     biofix_date="March 10",
-#     budbreak_date="March 10",
-#     discrete_actions=True,
-#     truncated_observations='truncated',
-# ))
+do_check_env = False
+if do_check_env:
+    from gymnasium.utils.env_checker import check_env
+    check_env(MultipleWeatherASCabEnv(
+        weather_data_library=get_weather_library_from_csv(os.path.join(os.path.dirname(os.path.dirname(__file__)), "dataset", f"train.csv")),
+        biofix_date="March 10",
+        budbreak_date="March 10",
+        discrete_actions=True,
+        truncated_observations='truncated',
+    ))
 
 def _wrapper_picker(wrapper):
     if wrapper is None:
@@ -43,10 +45,6 @@ def _register_ascab_env(dataset: str = 'train',
                         competition_name: str = "test-competition-232675",):
 
     weather_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "hackathon", "dataset", f"{dataset}.csv")
-    if not os.path.exists(weather_path):
-        weather_path = f"/kaggle/input/{competition_name}/{dataset}.csv"
-
-
     library = get_weather_library_from_csv(weather_path)
 
     str_discrete = "Discrete" if is_discrete else "Continuous"

@@ -194,7 +194,6 @@ class WeatherDataLibrary:
 
         if loaded_weather is None:
             weather_data = get_meteo(params)
-            # weather_data.to_csv(f"C:\\PycharmProjects\\ascab\\A-scab\\weather_{params['latitude']}_{params['longitude']}_{params['start_date']}_{params['end_date']}.csv")
         else:
             weather_data = loaded_weather
 

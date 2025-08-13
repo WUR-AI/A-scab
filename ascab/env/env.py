@@ -249,10 +249,7 @@ class AScabEnv(gym.Env):
         """
         self.info["Date"].append(self.date)
 
-        # encode day into observation with cyclical sin and cos encoding
         day_of_year = self.date.timetuple().tm_yday
-        # self.info.setdefault("SinDay", []).append(np.sin(2 * np.pi * day_of_year / 365.0))
-        # self.info.setdefault("CosDay", []).append(np.cos(2 * np.pi * day_of_year / 365.0))
 
         df_summary_weather = summarize_weather([self.date], self.weather)
         varnames = [col for col in self.info.keys() if col in df_summary_weather.columns]
@@ -492,66 +489,3 @@ class ActionConstrainer(gym.ActionWrapper):
             entry_point=f"{cls.__module__}:{cls.__name__}",
             kwargs=kwargs or None,  # needs EzPickle if you keep kwargs
         )
-
-
-class EarlyTerminationWrapper(gym.Wrapper):
-    def __init__(self,
-                 env: AScabEnv,
-                 max_actions: int = 8,
-                 penalty: float = 0.0,
-                 ):
-        super(EarlyTerminationWrapper, self).__init__(env)
-        self.max_actions = max_actions
-        self.actions_done = 0
-        self.penalty = penalty
-
-    def step(self, action):
-        if action > 0.0:
-            self.actions_done += 1
-
-        obs, reward, terminated, truncated, info = self.env.step(action)
-
-        if not terminated and self.actions_done > self.max_actions:
-            truncated = True
-            if self.penalty > 0.0:
-                reward -= self.penalty
-
-        return obs, reward, terminated, truncated, info
-
-    def reset(self, *args, **kwargs):
-        self.actions_done = 0
-        return super().reset(*args, **kwargs)
-
-
-class PenaltyWrapper(gym.RewardWrapper):
-    def __init__(self,
-                 env: AScabEnv,
-                 penalty: float = 0.1,
-                 ):
-        super(PenaltyWrapper, self).__init__(env)
-        self.penalty = max(0.0, penalty)
-
-    def step(self, action):
-
-        obs, reward, terminated, truncated, info = self.env.step(action)
-
-        if not terminated and self.env.unwrapped.remaining_sprays <= 1:
-            if self.penalty > 0.0:
-                reward -= self.penalty
-
-        return obs, reward, terminated, truncated, info
-
-    def reset(self, *args, **kwargs):
-        self.actions_done = 0
-        return super().reset(*args, **kwargs)
-
-    @classmethod
-    def wrapper_spec(cls, **kwargs):
-        # helper to build a WrapperSpec on‑the‑fly
-        return WrapperSpec(
-            name=cls.__name__,
-            entry_point=f"{cls.__module__}:{cls.__name__}",
-            kwargs=kwargs or None,  # needs EzPickle if you keep kwargs
-        )
-
-

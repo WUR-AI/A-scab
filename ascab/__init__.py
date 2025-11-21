@@ -4,6 +4,8 @@ import gymnasium as gym
 from .env.env import MultipleWeatherASCabEnv, ActionConstrainer, get_weather_library_from_csv
 
 do_check_env = False
+do_register_env = True
+
 if do_check_env:
     from gymnasium.utils.env_checker import check_env
     check_env(MultipleWeatherASCabEnv(
@@ -30,6 +32,12 @@ def _register_ascab_env(dataset: str = 'train',
                         competition_name: str = "test-competition-232675",):
 
     weather_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "hackathon", "dataset", f"{dataset}.csv")
+
+    if not os.path.exists(weather_path):
+        print(f"[WARNING] Weather file not found: {weather_path}")
+        print(f"[WARNING] Skipping registration of Ascab env for dataset='{dataset}'.")
+        return
+
     library = get_weather_library_from_csv(weather_path)
 
     str_discrete = "Discrete" if is_discrete else "Continuous"
@@ -58,8 +66,9 @@ def _register_ascab_env(dataset: str = 'train',
         additional_wrappers=_wrapper_picker(wrapper=use_wrapper),
     )
 
-print(f"Please wait a few seconds; importing the AscabGym modules...")
-for data in ['train', 'val']:
-    for discrete in [True, False]:
-        _register_ascab_env(dataset=data, is_discrete=discrete, use_wrapper=None)
-print(f"Imported successfully!")
+if do_register_env:
+    print(f"Please wait a few seconds; importing the AscabGym modules...")
+    for data in ['train', 'val']:
+        for discrete in [True, False]:
+            _register_ascab_env(dataset=data, is_discrete=discrete, use_wrapper=None)
+    print(f"Imported successfully!")

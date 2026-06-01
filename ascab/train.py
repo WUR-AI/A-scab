@@ -305,6 +305,47 @@ class UmbrellaAgent(BaseAgent):
                 return self.pesticide_filled_to - self.ascab.get_wrapper_attr("info")["Pesticide"][-1]
         return 0.0
 
+
+class NaiveUmbrellaAgent(BaseAgent):
+    def __init__(
+        self,
+        ascab: Optional[AScabEnv] = None,
+        render: bool = True,
+        pesticide_filled_to: float = 0.75,
+    ):
+        super().__init__(ascab=ascab, render=render)
+        self.pesticide_filled_to = pesticide_filled_to
+        self.days_after_spraying_threshold = 3
+        self.days_after_spraying = 0
+
+    def get_action(self, observation: dict = None) -> float:
+        # sanity check
+        # if forecasted rain tomorrow, and not raining today and it has been at least 3 days since spraying
+        if self.ascab.get_wrapper_attr("info")["Forecast_day1_HasRain"] and self.ascab.get_wrapper_attr("info")["Forecast_day1_HasRain"][-1]:
+            if self.ascab.get_wrapper_attr("info")["HasRain"] and not self.ascab.get_wrapper_attr("info")["HasRain"][-1] and \
+                    self.days_after_spraying >= self.days_after_spraying_threshold:
+                return self.pesticide_filled_to
+        # otherwise check if it is raining today, and we have sprayed two days before and it rained yesterday
+        elif len(self.ascab.get_wrapper_attr("info")["HasRain"]) > 2 and self.ascab.get_wrapper_attr("info")["HasRain"][-1]:
+            if self.ascab.get_wrapper_attr("info")["HasRain"][-2] and self.days_after_spraying == 2:
+                return self.pesticide_filled_to
+        return 0.0
+
+    def step_ascab(self, action):
+        if action == 0:
+            self.days_after_spraying += 1
+        elif action > 0:
+            self.days_after_spraying = 0
+
+        observation, reward, terminated, _,  info = self.ascab.step(action)
+        return observation, reward, terminated, info
+
+    def reset_ascab(self):
+        self.days_after_spraying = 0
+        observation, _ = self.ascab.reset()
+        return observation
+
+
 class RandomAgent(BaseAgent):
     def __init__(
         self,

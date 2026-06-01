@@ -65,6 +65,8 @@ def get_weather_library(
     locations: List[tuple[float, float]],
     dates: Union[List[tuple[str, str]], tuple[str, str]],
     days_of_forecast: int = get_default_days_of_forecast(),
+    *,
+    elevation_downscaling: bool = True,
 ):
     result = WeatherDataLibrary()
 
@@ -74,9 +76,12 @@ def get_weather_library(
 
     for location in locations:
         for date_range in dates:
-            result.collect_weather(
-                params=get_weather_params(location=location, dates=date_range, days_of_forecast=days_of_forecast)
+            params = get_weather_params(
+                location=location, dates=date_range, days_of_forecast=days_of_forecast
             )
+            if not elevation_downscaling:
+                params["elevation"] = "nan"
+            result.collect_weather(params=params)
     return result
 
 def get_weather_library_from_csv(
@@ -85,6 +90,7 @@ def get_weather_library_from_csv(
         location_col: str = "location",
         index_col: str = "date",
 ):
+    print(f"Reading weather library from {csv_path}")
     df = pd.read_csv(csv_path, parse_dates=[index_col])
     if index_col not in df.columns:
         raise ValueError(f"CSV must contain a '{index_col}' column.")

@@ -18,18 +18,18 @@ from ascab.env.env import AScabEnv, MultipleWeatherASCabEnv, ActionConstrainer, 
 
 from ascab.agent.ppo_lagrangian import LagrangianPPO, CostActorCriticPolicy, max_action_constraint
 
-try:
-    from comet_ml import Experiment
-    from comet_ml.integration.gymnasium import CometLogger
-    use_comet = True
-except ImportError:
-    use_comet = False
+
+from comet_ml import Experiment
+from comet_ml.integration.gymnasium import CometLogger
+use_comet = True
+
 
 try:
     import torch as th
     import tensorboard
 except ImportError:
     use_tensorboard = False
+
 
 try:
     from stable_baselines3 import PPO, SAC, TD3, DQN, HER
@@ -42,9 +42,29 @@ except ImportError:
 try:
     from sb3_contrib import RecurrentPPO, MaskablePPO
     from sb3_contrib.common.maskable.callbacks import MaskableEvalCallback
+    from sb3_contrib.common.maskable.utils import get_action_masks
 except ImportError:
     RecurrentPPO = None
     MaskablePPO = None
+    MaskableRecurrentPPO = None
+
+try:
+    from rllte.xplore.reward import E3B
+    irs_algo = E3B
+except ImportError:
+    irs_algo = None
+
+
+def get_env_eval_episode_count(env) -> int:
+    try:
+        if isinstance(env, VecNormalize):
+            return len(env.get_attr("weather_keys")[0])
+        return len(env.get_wrapper_attr("weather_keys"))
+    except (AttributeError, IndexError, TypeError):
+        try:
+            return len(env.unwrapped.weather_keys)
+        except AttributeError:
+            return 1
 
 class BaseAgent(abc.ABC):
     def __init__(self, ascab: Optional[AScabEnv] = None, render: bool = True):
@@ -78,19 +98,23 @@ class BaseAgent(abc.ABC):
         pass
 
     def step_ascab(self, action):
-        observation, reward, terminated, _, info = self.ascab.step(action)
+        if not isinstance(self.ascab, VecNormalize):
+            observation, reward, terminated, _, info = self.ascab.step(action)
+        else:
+            observation, reward, terminated, info = self.ascab.step(action)
+
         return observation, reward, terminated, info
 
     def reset_ascab(self):
-        observation, _ = self.ascab.reset()
+        # check if
+        if not isinstance(self.ascab, VecNormalize):
+            observation, _ = self.ascab.reset()
+        else:
+            observation = self.ascab.reset()
         return observation
 
     def get_n_eval_episodes(self):
-        if isinstance(self.ascab, VecNormalize):
-            n_eval_episodes = len(self.ascab.get_attr('weather_keys')[0]) if hasattr(self.ascab.unwrapped.envs[0], "weather_keys") else 1
-        else:
-            n_eval_episodes = len(self.ascab.unwrapped.weather_keys) if hasattr(self.ascab.unwrapped, "weather_keys") else 1
-        return n_eval_episodes
+        return get_env_eval_episode_count(self.ascab)
 
     @staticmethod
     def filter_info(info):
@@ -179,10 +203,14 @@ class CeresOptimizer:
                 "method": "L-BFGS-B",
                 "args": (self.ascab, self.unmasked_indices, self.action_length),
                 "bounds": bounds,
-                "options": {"maxiter": 30},
+                "options": {
+                    "maxiter": 30,
+                    "ftol": 1e-5,
+                    "gtol": 1e-5,
+                },
             },
             niter=30,
-            callback=print_when_accepted,
+            callback=print_when_accepted
         )
 
         self.optimized_actions = result.x
@@ -308,13 +336,26 @@ class RandomAgent(BaseAgent):
         self,
         ascab: Optional[AScabEnv] = None,
         render: bool = True,
-        seed: Optional[int] = 42,
+        seed: Optional[int] = 107,
     ):
         super().__init__(ascab=ascab, render=render)
         self.random_generator = np.random.RandomState(seed)
+        self.spray_left = 7
+
 
     def get_action(self, observation: dict = None) -> float:
-        return self.random_generator.uniform(0.0, 1.0)
+        if len(self.ascab.get_wrapper_attr("info")["InfectionWindow"]) > 0:
+            if self.ascab.get_wrapper_attr("info")["InfectionWindow"][-1] == 1:
+                go_spray = self.random_generator.choice([0, 1], p=[0.8, 0.2])
+                if go_spray == 1 and self.spray_left > 0:
+                    self.spray_left -= 1
+                    return self.random_generator.uniform(0.0, 1.0)
+        return 0.0
+
+    def reset_ascab(self):
+        self.spray_left = 7
+        obs, _ = self.ascab.reset()
+        return obs, _
 
 
 class EvalLogger(BaseCallback):
@@ -332,9 +373,167 @@ class EvalLogger(BaseCallback):
         return True
 
 
+def set_eval_env_beta(eval_env, beta: float | None):
+    if beta is None:
+        return
+    try:
+        eval_env.env_method("set_beta", beta, dynamic_beta=False)
+    except (AttributeError, TypeError):
+        try:
+            eval_env.get_wrapper_attr("set_beta")(beta, dynamic_beta=False)
+        except AttributeError:
+            pass
+
+
+class BetaCurriculumCallback(BaseCallback):
+    def __init__(self, env: AScabEnv, total_timesteps: int, verbose: int = 0):
+        super(BetaCurriculumCallback, self).__init__(verbose)
+        self.env = env
+        self.total_timesteps = max(1, int(total_timesteps))
+
+    def _on_training_start(self) -> None:
+        self.env.set_beta_curriculum_progress(0.0)
+
+    def _on_step(self) -> bool:
+        progress = min(1.0, self.num_timesteps / self.total_timesteps)
+        self.env.set_beta_curriculum_progress(progress)
+        return True
+
+
+def info_to_eval_dataframe(info: Dict[str, Any]) -> pd.DataFrame:
+    """
+    Convert env info dict to a dataframe while removing SB3/Gym keys
+    and dropping entries that do not have the dominant time-series length.
+    """
+
+    ignored_keys = {
+        "TimeLimit.truncated",
+        "episode",
+        "terminal_observation",
+    }
+
+    clean = {
+        k: v for k, v in info.items()
+        if k not in ignored_keys
+    }
+
+    # Keep only list/array-like values
+    sequence_items = {}
+    lengths = {}
+
+    for k, v in clean.items():
+        if isinstance(v, (list, tuple, np.ndarray, pd.Series)):
+            try:
+                lengths[k] = len(v)
+                sequence_items[k] = v
+            except TypeError:
+                pass
+
+    if not lengths:
+        return pd.DataFrame()
+
+    # Use the most common length among time-series variables
+    dominant_length = pd.Series(lengths).mode().iloc[0]
+
+    clean_equal_length = {
+        k: v for k, v in sequence_items.items()
+        if len(v) == dominant_length
+    }
+
+    eval_df = pd.DataFrame(clean_equal_length)
+
+    if "Date" in eval_df.columns:
+        eval_df["Date"] = pd.to_datetime(eval_df["Date"])
+
+    return eval_df
+
 class CustomEvalCallback(EvalCallback):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, comet_experiment=None, save_eval_pickles=True, log_model=True,
+                 fixed_beta: float | None = 0.025, **kwargs):
         super(CustomEvalCallback, self).__init__(*args, **kwargs)
+        self.comet_experiment = comet_experiment
+        self.save_eval_pickles = save_eval_pickles
+        self.log_model = log_model
+        self.fixed_beta = fixed_beta
+
+    def _on_step(self) -> bool:
+        if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
+            set_eval_env_beta(self.eval_env, self.fixed_beta)
+        return super()._on_step()
+
+    def _log_success_callback(self, locals_: Dict[str, Any], globals_: Dict[str, Any]) -> None:
+        if locals_["done"]:
+            info = locals_["info"]
+            tag = info["Date"][0].year
+
+            for cum_var in ["Action", "Reward"]:
+                self.logger.record(
+                    f"eval/{tag}-sum_{cum_var}",
+                    float(np.sum(info[cum_var]))
+                )
+
+            print(f'{tag}: {np.sum(info["Reward"])}')
+
+            os.makedirs(self.best_model_save_path, exist_ok=True)
+
+            # Save VecNormalize stats
+            norm_path = os.path.join(
+                self.best_model_save_path,
+                f"vecnormalize_step_{self.num_timesteps}.pkl"
+            )
+            self.training_env.save(norm_path)
+
+            # Save eval dataframe as pickle
+            if self.save_eval_pickles:
+                eval_df = info_to_eval_dataframe(info)
+
+                eval_pickle_path = os.path.join(
+                    self.best_model_save_path,
+                    f"eval_{tag}_step_{self.num_timesteps}.pkl"
+                )
+
+                with open(eval_pickle_path, "wb") as f:
+                    pickle.dump(eval_df, f)
+
+                if self.comet_experiment is not None:
+                    self.comet_experiment.log_asset(
+                        eval_pickle_path,
+                        file_name=f"eval_{tag}_step_{self.num_timesteps}.pkl"
+                    )
+
+            # Log normalization parameters to Comet
+            if self.comet_experiment is not None and os.path.exists(norm_path):
+                self.comet_experiment.log_asset(
+                    norm_path,
+                    file_name=f"vecnormalize_step_{self.num_timesteps}.pkl"
+                )
+
+            # Save and log model checkpoint
+            if self.log_model and tag == 2017:
+                checkpoint_model_path = os.path.join(
+                    self.best_model_save_path,
+                    f"model_step_{self.num_timesteps}"
+                )
+
+                self.model.save(checkpoint_model_path)
+
+                if self.comet_experiment is not None:
+                    self.comet_experiment.log_model(
+                        name=f"model_step_{self.num_timesteps}",
+                        file_or_folder=checkpoint_model_path + ".zip"
+                    )
+
+
+class CustomMaskableEvalCallback(MaskableEvalCallback):
+    def __init__(self, *args, fixed_beta: float | None = 0.025, **kwargs):
+        kwargs.pop("comet_experiment", None)
+        super(CustomMaskableEvalCallback, self).__init__(*args, **kwargs)
+        self.fixed_beta = fixed_beta
+
+    def _on_step(self) -> bool:
+        if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
+            set_eval_env_beta(self.eval_env, self.fixed_beta)
+        return super()._on_step()
 
     def _log_success_callback(self, locals_: Dict[str, Any], globals_: Dict[str, Any]) -> None:
         if locals_["done"]:
@@ -344,6 +543,61 @@ class CustomEvalCallback(EvalCallback):
                 self.logger.record(f"eval/{tag}-sum_{cum_var}", float(np.sum(info[cum_var])))
             print(f'{tag}: {np.sum(info["Reward"])}')
             self.training_env.save(os.path.join(self.best_model_save_path+"_norm.pkl"))
+
+
+class IntrinsicRewardCallback(BaseCallback):
+    """
+    A custom callback for combining RLeXplore and on-policy algorithms from SB3.
+    """
+    def __init__(self, irs, verbose=0):
+        super(IntrinsicRewardCallback, self).__init__(verbose)
+        self.irs = irs
+        self.buffer = None
+
+    def init_callback(self, model) -> None:
+        super().init_callback(model)
+        self.buffer = self.model.rollout_buffer
+
+    def _on_step(self) -> bool:
+        """
+        This method will be called by the model after each call to `env.step()`.
+
+        :return: (bool) If the callback returns False, training is aborted early.
+        """
+        observations = self.locals["obs_tensor"]
+        device = observations.device
+        actions = th.as_tensor(self.locals["actions"], device=device)
+        rewards = th.as_tensor(self.locals["rewards"], device=device)
+        dones = th.as_tensor(self.locals["dones"], device=device)
+        next_observations = th.as_tensor(self.locals["new_obs"], device=device)
+
+        # ===================== watch the interaction ===================== #
+        self.irs.watch(observations, actions, rewards, dones, dones, next_observations)
+        # ===================== watch the interaction ===================== #
+        return True
+
+    def _on_rollout_end(self) -> None:
+        # ===================== compute the intrinsic rewards ===================== #
+        # prepare the data samples
+        obs = th.as_tensor(self.buffer.observations)
+        # get the new observations
+        new_obs = obs.clone()
+        new_obs[:-1] = obs[1:]
+        new_obs[-1] = th.as_tensor(self.locals["new_obs"])
+        actions = th.as_tensor(self.buffer.actions)
+        rewards = th.as_tensor(self.buffer.rewards)
+        dones = th.as_tensor(self.buffer.episode_starts)
+        print(obs.shape, actions.shape, rewards.shape, dones.shape, obs.shape)
+        # compute the intrinsic rewards
+        intrinsic_rewards = self.irs.compute(
+            samples=dict(observations=obs, actions=actions,
+                         rewards=rewards, terminateds=dones,
+                         truncateds=dones, next_observations=new_obs),
+            sync=True)
+        # add the intrinsic rewards to the buffer
+        self.buffer.advantages += intrinsic_rewards.cpu().numpy()
+        self.buffer.returns += intrinsic_rewards.cpu().numpy()
+        # ===================== compute the intrinsic rewards ===================== #
 
 
 def is_wrapped(env, wrapper_cls) -> bool:
@@ -369,6 +623,8 @@ class RLAgent(BaseAgent):
         normalize: bool = True,
         seed: int = 42,
         continue_training: bool = False,
+        irs: bool = False,
+        eval_beta: Optional[float] = 0.025,
         hyperparams: dict = {},
     ):
         super().__init__(ascab=ascab_train, render=render)
@@ -383,11 +639,15 @@ class RLAgent(BaseAgent):
         self.is_discrete = discrete_actions
         self.continue_training = continue_training
         self.normalize = normalize
-        self.hyperparams = hyperparams
+        self.hyperparams = {}
+        self.hyperparameters = hyperparams
         self.seed = seed
+        self.use_irs = irs
+        self.eval_beta = eval_beta
 
         if use_comet:
             self.comet = None
+
 
         self.train(seed)
 
@@ -406,6 +666,7 @@ class RLAgent(BaseAgent):
                 self.ascab_train = FlattenObservation(self.ascab_train)
             self.ascab = FilterObservation(self.ascab, filter_keys=self.observation_filter)
         self.ascab = FlattenObservation(self.ascab)
+        train_env_for_callbacks = self.ascab_train.unwrapped if self.ascab_train is not None else None
 
 
         if self.path_model is not None and (os.path.exists(self.path_model) or os.path.exists(self.path_model + ".zip")):
@@ -432,20 +693,43 @@ class RLAgent(BaseAgent):
                                                 norm_reward=False if not is_wrapped(self.ascab_train, PenaltyWrapper) else True)
                 self.ascab = VecNormalize(DummyVecEnv([lambda: self.ascab]), norm_obs=True, norm_reward=False if not is_wrapped(self.ascab_train, PenaltyWrapper) else True,
                                           training=False)
-            eval_callback = CustomEvalCallback(
-                eval_env=self.ascab,
-                eval_freq=1500,
-                deterministic=True,
-                render=False,
-                n_eval_episodes=len(self.ascab.weather_keys) if hasattr(self.ascab, "weather_keys") else 1,
-                best_model_save_path=self.path_model,
-            )
+            if self.algo == MaskablePPO:
+                eval_callback = CustomMaskableEvalCallback(
+                    eval_env=self.ascab,
+                    eval_freq=1500,
+                    deterministic=True,
+                    render=False,
+                    n_eval_episodes=get_env_eval_episode_count(self.ascab),
+                    best_model_save_path=self.path_model,
+                    comet_experiment=self.comet,
+                    fixed_beta=self.eval_beta,
+                )
+            else:
+                eval_callback = CustomEvalCallback(
+                    eval_env=self.ascab,
+                    eval_freq=1500,
+                    deterministic=True,
+                    render=False,
+                    n_eval_episodes=get_env_eval_episode_count(self.ascab),
+                    best_model_save_path=self.path_model,
+                    comet_experiment=self.comet,
+                    fixed_beta=self.eval_beta,
+                )
             callbacks.append(eval_callback)
 
-        policy = "MlpPolicy" if self.algo != RecurrentPPO else "MlpLstmPolicy"
+            if train_env_for_callbacks is not None and getattr(train_env_for_callbacks, "dynamic_beta", False):
+                callbacks.append(BetaCurriculumCallback(train_env_for_callbacks, self.n_steps))
+
+            if self.use_irs is True and irs_algo is not None:
+                irs = E3B(envs=self.ascab_train, device="cpu")
+                irs_callback = IntrinsicRewardCallback(irs=irs)
+                callbacks.append(irs_callback)
+
+        recurrent_algos = tuple(algo for algo in (RecurrentPPO, MaskableRecurrentPPO) if algo is not None)
+        policy = "MlpLstmPolicy" if self.algo in recurrent_algos else "MlpPolicy"
         policy = CostActorCriticPolicy if self.algo == LagrangianPPO else policy
         self.model = self.algo(policy, self.ascab_train, verbose=1, seed=seed, tensorboard_log=self.path_log,
-                               **self.algo_hyperparams(self.algo), **self.lag_ppo())
+                               **self.algo_hyperparams(), **self.lag_ppo())
         print(f"Training with seed {seed}...")
         self.model.learn(total_timesteps=self.n_steps, callback=callbacks)
         if self.path_model is not None:
@@ -465,7 +749,7 @@ class RLAgent(BaseAgent):
                 action, states = self.get_action(observation, states=states, episode_start=episode_start)
                 observation, reward, terminated, info = self.step_ascab(action)
                 total_reward += reward
-                episode_start = terminated
+                episode_start = np.array([terminated], dtype=bool)
             all_rewards.append(total_reward)
             print(f"Reward: {total_reward}")
             all_infos.append(self.ascab.get_wrapper_attr('get_info')(to_dataframe=True)
@@ -476,26 +760,51 @@ class RLAgent(BaseAgent):
         return pd.concat(all_infos, ignore_index=True)
 
     def get_action(self, observation: Optional[dict] = None, states = None, episode_start = None) -> float:
-        return self.model.predict(observation,
-                                  state=states,
-                                  episode_start=episode_start,
-                                  deterministic=True)
-
-    def step_ascab(self, action):
-        if not isinstance(self.ascab, VecNormalize):
-            observation, reward, terminated, _, info = self.ascab.step(action)
+        if self.algo == MaskablePPO:
+            if isinstance(self.ascab, VecNormalize):
+                action_mask = self.ascab.unwrapped.env_method('action_masks')
+            else:
+                action_mask = self.ascab.unwrapped.action_masks()
+            return self.model.predict(observation, action_masks=th.Tensor(action_mask), deterministic=True)
+        elif self.algo == MaskableRecurrentPPO:
+            action_mask = get_action_masks(self.ascab)
+            return self.model.predict(
+                observation,
+                state=states,
+                episode_start=episode_start,
+                action_masks=action_mask,
+                deterministic=True,
+            )
         else:
-            observation, reward, terminated, info = self.ascab.step(action)
+            return self.model.predict(observation,
+                                      state=states,
+                                      episode_start=episode_start,
+                                      deterministic=True)
 
-        return observation, reward, terminated, info
+    def lag_ppo(self):
+        return {"constraint_fn": max_action_constraint} if self.algo == LagrangianPPO else {}
 
-    def reset_ascab(self):
-        # check if
-        if not isinstance(self.ascab, VecNormalize):
-            observation, _ = self.ascab.reset()
+
+    def algo_hyperparams(self, hyperparameters = None):
+        # include algorithm specific hyperparams here!
+        if hyperparameters is None:
+            return {
+                "gamma": 0.99,
+                "batch_size": 272*4,
+                "n_epochs": 5,
+                # "n_steps": 2168,
+                "learning_rate": 0.00005,
+                # "ent_coef": 0.01,
+                "policy_kwargs": {
+                    "ortho_init": False,
+                    # "net_arch":
+                    #     {"pi": [256, 256],
+                    #      "vf": [256, 256],
+                    #      "cf": [256, 256],}
+                },
+            }
         else:
-            observation = self.ascab.reset()
-        return observation
+            return self.hyperparameters
 
     def comet_logging(self):
         rootdir = os.path.dirname(os.path.dirname(__file__))
@@ -511,7 +820,7 @@ class RLAgent(BaseAgent):
             auto_histogram_tensorboard_logging=True
         )
         comet_log.log_code(folder=os.path.join(rootdir, 'ascab'))
-        comet_log.log_parameters(self.hyperparams)
+        comet_log.log_parameters(self.algo_hyperparams())
 
         obs_space = self.ascab_train.unwrapped.observation_space
         act_space = self.ascab_train.unwrapped.action_space
@@ -521,7 +830,8 @@ class RLAgent(BaseAgent):
         }
         comet_log.log_parameters(exp_params)
 
-        comet_log.set_name(f'{self.algo.__name__}-{self.seed}')
+        comet_log.set_name(f'array-{self.algo.__name__}-{self.seed}-{self._beta_label()}')
+        comet_log.add_tags(self.tags_comet())
         comet_log.add_tags(
             [self.algo.__name__, "IRS" if self.use_irs else "", "lr" + str(self.algo_hyperparams()['learning_rate'])])
 
@@ -529,48 +839,82 @@ class RLAgent(BaseAgent):
         self.comet = comet_log
         print("Using Comet!")
 
+
+    def tags_comet(self):
+        hy_keys = ['learning_rate', 'n_epochs', 'batch_size']
+        tag = [self.algo.__name__, self._beta_label()]
+        if self.use_irs:
+            tag.append("IRS")
+        for k in hy_keys:
+            if k in self.algo_hyperparams():
+                tag.append(k+str(self.algo_hyperparams()[k]))
+        return tag
+
+    def _beta_label(self):
+        env = self.ascab_train.unwrapped
+        if getattr(env, "dynamic_beta", False):
+            min_beta, max_beta = env.beta_range
+            return f"dynamic_beta{min_beta}-{max_beta}_hold{env.dynamic_beta_hold_episodes}"
+        return f"{env.beta}"
+
+
 if __name__ == "__main__":
     ascab_env = MultipleWeatherASCabEnv(
             weather_data_library=get_weather_library(
                 locations=[(42.1620, 3.0924)],
+                # locations=[(44.0986, 1.1628)],
                 dates=get_dates([year for year in range(2016, 2025) if year % 2 != 0], start_of_season=get_default_start_of_season(), end_of_season=get_default_end_of_season())),
             biofix_date="March 10",
             budbreak_date="March 10",
             mode="sequential",
             discrete_actions=False,
+        # beta=0.025,
         )
     ascab_env_constrained = ActionConstrainer(ascab_env)
 
-    print("zero agent")
-    zero_agent = ZeroAgent(ascab=ascab_env_constrained, render=False)  # -0.634
-    zero_results = zero_agent.run()
+    use_baselines = False
+    if use_baselines:
 
-    print("filling agent")
-    fill_agent = FillAgent(ascab=ascab_env_constrained, pesticide_threshold=0.1, render=False)
-    filling_results = fill_agent.run()
+        print("zero agent")
+        zero_agent = ZeroAgent(ascab=ascab_env_constrained, render=False)  # -0.634
+        zero_results = zero_agent.run()
 
-    print("naive umbrella agent")
-    numbrella_agent = NaiveUmbrellaAgent(ascab=ascab_env_constrained, render=False)
-    numbrella_results = numbrella_agent.run()
+        print("filling agent")
+        fill_agent = FillAgent(ascab=ascab_env_constrained, pesticide_threshold=0.1, render=False)
+        filling_results = fill_agent.run()
 
-    print("umbrella agent")
-    umbrella_agent = UmbrellaAgent(ascab=ascab_env_constrained, render=False)
-    umbrella_results = umbrella_agent.run()
+        print("schedule agent")
+        schedule_agent = ScheduleAgent(ascab=ascab_env_constrained, render=False)
+        schedule_results = schedule_agent.run()
 
-    use_random = False
+        print("umbrella agent")
+        umbrella_agent = UmbrellaAgent(ascab=ascab_env_constrained, render=False)
+        umbrella_results = umbrella_agent.run()
+
+        save_path = os.path.join(os.getcwd(), f"rl_agent_umbrella")
+        with open(save_path + ".pkl", "wb") as f:
+            print(f"saved to {save_path + '.pkl'}")
+            pickle.dump(umbrella_results, file=f)
+
+    use_random = True
     if use_random:
         print("random agent")
         rng = np.random.RandomState(seed=107)
         dict_rand = {}
-        for i in range(1):
+        for i in range(10):
             random_agent = RandomAgent(ascab=ascab_env_constrained, render=False, seed=rng.randint(0, 100))
             random_results = random_agent.run()
             dict_rand[i] = random_results
 
-    use_ceres = True
+        save_path = os.path.join(os.getcwd(), f"new_random")
+        with open(save_path + ".pkl", "wb") as f:
+            print(f"saved to {save_path + '.pkl'}")
+            pickle.dump(dict_rand, file=f)
+
+    use_ceres = False
     if use_ceres:
         ceres_results = pd.DataFrame()
-        for y in [year for year in range(2016, 2025)]: # if year % 2 != 0]:
+        for y in [year for year in range(2016, 2025) if year % 2 != 0]:
             ascab_env = MultipleWeatherASCabEnv(
                 weather_data_library=get_weather_library(
                     locations=[(42.1620, 3.0924)],
@@ -588,12 +932,12 @@ if __name__ == "__main__":
             optimizer.run_optimizer()
             year_results = optimizer.run_ceres_agent()
             ceres_results = pd.concat([ceres_results, year_results], ignore_index=True)
-        save_path = os.path.join(os.getcwd(), f"ceres")
+        save_path = os.path.join(os.getcwd(), f"rl_agent_ceres")
         with open(save_path + ".pkl", "wb") as f:
-            print(f"saved to {save_path + '.pkl'}")
+            print(f"saved to {save_path + 'cer.pkl'}")
             pickle.dump(ceres_results, file=f)
 
-
+    PPO = None
     if PPO is not None:
         print("rl agent")
         discrete_algos = ["PPO", "DQN", "RecurrentPPO"]
@@ -601,6 +945,9 @@ if __name__ == "__main__":
         algo = PPO
         log_path = os.path.join(os.getcwd(), "log")
         save_path = os.path.join(os.getcwd(), f"rl_agent_train_odd_{algo.__name__}")
+        # with open(save_path + "cer.pkl", "wb") as f:
+        #     print(f"saved to {save_path+'cer.pkl'}")
+        #     pickle.dump(ceres_results, file=f)
         ascab_train = MultipleWeatherASCabEnv(
             weather_data_library=get_weather_library(
                 locations=[(42.1620, 3.0924), (42.1620, 3.0), (42.5, 2.5), (41.5, 3.0924), (42.5, 3.0924)],
@@ -628,16 +975,16 @@ if __name__ == "__main__":
     else:
         print("Stable-baselines3 is not installed. Skipping RL agent.")
 
-    all_results_dict = {"zero": zero_results, "umbrella": umbrella_results, }
-    if use_random:
-        all_results_dict["random"] = list(dict_rand.keys())[0]
-    if use_ceres:
-        all_results_dict["ceres"] = ceres_results
-    if PPO:
-        all_results_dict["rl"] = ascab_rl_results
-
-    plot_results(all_results_dict,
-                 save_path=os.path.join(os.getcwd(), "results.png"),
-                 variables=["Precipitation", "LeafWetness", "AscosporeMaturation", "Discharge", "Pesticide", "Risk",
-                            "Action", "Phenology"])
+    # all_results_dict = {"zero": zero_results, "umbrella": umbrella_results, }
+    # if use_random:
+    #     all_results_dict["random"] = list(dict_rand.keys())[0]
+    # if use_ceres:
+    #     all_results_dict["ceres"] = ceres_results
+    # if PPO:
+    #     all_results_dict["rl"] = ascab_rl_results
+    #
+    # plot_results(all_results_dict,
+    #              save_path=os.path.join(os.getcwd(), "results.png"),
+    #              variables=["Precipitation", "LeafWetness", "AscosporeMaturation", "Discharge", "Pesticide", "Risk",
+    #                         "Action", "Phenology"])
 

@@ -83,6 +83,8 @@ def get_weather_library_from_csv(
         *,
         location_col: str = "location",
         index_col: str = "date",
+        location_id: str | None = None,
+        years: list[int] | None = None,
 ):
     df = pd.read_csv(csv_path, parse_dates=[index_col])
     if index_col not in df.columns:
@@ -91,7 +93,13 @@ def get_weather_library_from_csv(
         raise ValueError(f"CSV must contain a '{location_col}' column.")
 
     df[index_col] = pd.to_datetime(df[index_col],  utc=True,  errors="coerce")
+    if location_id is not None:
+        df = df[df[location_col] == location_id].copy()
     df = df.set_index(index_col).sort_index()
+    if years is not None:
+        df = df[df.index.year.isin(years)].copy()
+    if df.empty:
+        raise ValueError(f"No weather data found in {csv_path}.")
 
     result = WeatherDataLibrary()
 
@@ -106,11 +114,11 @@ def get_weather_library_from_csv(
             params = dict(
                 latitude=lat,
                 longitude=lon,
-                start_date=slice_.index.min().strftime("%Y-%m-%d"),
-                end_date=slice_.index.max().strftime("%Y-%m-%d"),
+                start_date=year_df.index.min().strftime("%Y-%m-%d"),
+                end_date=year_df.index.max().strftime("%Y-%m-%d"),
             )
 
-            key = f"{loc_id}_{params['start_date']}_{params['end_date']}"
+            key = f"{loc_id}_{year}_{params['start_date']}_{params['end_date']}"
 
             weather_df = year_df.drop(columns=[location_col], errors="ignore")
 
@@ -120,7 +128,7 @@ def get_weather_library_from_csv(
                 loaded_weather=weather_df,
             )
 
-        return result
+    return result
 
 
 def get_default_observations() -> list[str]:
@@ -194,7 +202,10 @@ class AScabEnv(gym.Env):
                  days_of_forecast: int = get_default_days_of_forecast(),
                  biofix_date: str = "March 10", budbreak_date: str = "March 10",
                  seed: int = 42, verbose: bool = False, discrete_actions: bool = False,
-                 truncated_observations: str = 'truncated', action_budget: int = 8):
+                 truncated_observations: str = 'truncated', action_budget: int = 8, beta: float = 0.025,
+                 dynamic_beta: bool = False, beta_range: tuple[float, float] | None = None,
+                 beta_curriculum: bool = False, beta_curriculum_start_fraction: float = 0.4,
+                 dynamic_beta_hold_episodes: int = 1,):
         super().reset(seed=seed)
 
         self.seed = seed
@@ -208,7 +219,16 @@ class AScabEnv(gym.Env):
         self.total_spraying_frequency: int = 0
         self.spray_budget: int = max(6, int(action_budget))
         self.remaining_sprays: int = self.spray_budget
-        self.beta: float = 0.025
+        self.beta: float = beta
+        self.dynamic_beta = dynamic_beta
+        self.beta_range = tuple(beta_range) if beta_range is not None else (0.0, beta)
+        self.current_beta_range = self.beta_range
+        self.beta_curriculum = beta_curriculum
+        self.beta_curriculum_start_fraction = beta_curriculum_start_fraction
+        self.dynamic_beta_hold_episodes = max(1, int(dynamic_beta_hold_episodes))
+        self.dynamic_beta_episodes_since_sample = self.dynamic_beta_hold_episodes
+        self._validate_beta_range()
+        self.set_beta_curriculum_progress(0.0)
 
         observation_filter = get_observation_set(truncated_observations)
         print(f"Truncated observations is {truncated_observations}")
@@ -330,8 +350,14 @@ class AScabEnv(gym.Env):
         return o, r, self._terminated(), False, i
         
     def _get_observation(self) -> dict:
-        o = {name: np.array(value[-1], dtype=np.float32) if value else np.array(0.0, dtype=np.float32)
-             for name, value in self.info.items() if name in set(self.observation_space.keys())}
+        o = {}
+        for name, value in self.info.items():
+            if name not in set(self.observation_space.keys()):
+                continue
+            if name == "Beta" and not value:
+                o[name] = np.array(self.beta, dtype=np.float32)
+            else:
+                o[name] = np.array(value[-1], dtype=np.float32) if value else np.array(0.0, dtype=np.float32)
         return o
 
     def get_info(self, to_dataframe: bool = False):
@@ -364,7 +390,52 @@ class AScabEnv(gym.Env):
         self._reset_action_records()
         self._reset_internal(biofix_date=self.models['AscosporeMaturation'].biofix_date,
                              budbreak_date=self.models['LAI'].start_date)
+        self._sample_beta()
         return self._get_observation(), self.get_info()
+
+    def _validate_beta_range(self):
+        if len(self.beta_range) != 2:
+            raise ValueError("beta_range must contain exactly two values: (min_beta, max_beta)")
+        min_beta, max_beta = self.beta_range
+        if min_beta > max_beta:
+            raise ValueError("beta_range minimum must be less than or equal to maximum")
+        if not 0.0 <= self.beta_curriculum_start_fraction <= 1.0:
+            raise ValueError("beta_curriculum_start_fraction must be between 0.0 and 1.0")
+
+    def set_beta(self, beta: float, dynamic_beta: bool | None = None):
+        self.beta = float(beta)
+        if dynamic_beta is not None:
+            self.dynamic_beta = dynamic_beta
+        if not self.dynamic_beta:
+            self.current_beta_range = (self.beta, self.beta)
+        self.dynamic_beta_episodes_since_sample = 0
+
+    def set_beta_curriculum_progress(self, progress: float):
+        if not self.dynamic_beta or not self.beta_curriculum:
+            self.current_beta_range = self.beta_range
+            return
+
+        progress = float(np.clip(progress, 0.0, 1.0))
+        min_beta, max_beta = self.beta_range
+        midpoint = (min_beta + max_beta) / 2.0
+        full_half_width = (max_beta - min_beta) / 2.0
+        half_width_fraction = self.beta_curriculum_start_fraction + (
+            (1.0 - self.beta_curriculum_start_fraction) * progress
+        )
+        half_width = full_half_width * half_width_fraction
+        self.current_beta_range = (
+            max(min_beta, midpoint - half_width),
+            min(max_beta, midpoint + half_width),
+        )
+
+    def _sample_beta(self):
+        if self.dynamic_beta:
+            if self.dynamic_beta_episodes_since_sample >= self.dynamic_beta_hold_episodes:
+                min_beta, max_beta = self.current_beta_range
+                self.beta = float(self.np_random.uniform(min_beta, max_beta))
+                self.dynamic_beta_episodes_since_sample = 1
+            else:
+                self.dynamic_beta_episodes_since_sample += 1
 
     def _record_action(self, action):
         if action > 0.0:
@@ -384,7 +455,21 @@ class AScabEnv(gym.Env):
 
     def remaining_sprays_masker(self) -> np.ndarray:
         mask = np.ones(self.action_space.n, dtype=np.bool_)
-        if self.remaining_sprays <= 0:
+        # if self.remaining_sprays <= 0:
+        #     mask[1:] = False
+        return mask
+
+    def _is_current_infection_window(self) -> bool:
+        infection_window = self.info.get("InfectionWindow", [])
+        if infection_window:
+            return bool(infection_window[-1] == 1)
+
+        ascospore_value = self.models["AscosporeMaturation"].value
+        return get_pat_threshold() < ascospore_value < 0.99
+
+    def action_masks(self) -> np.ndarray:
+        mask = self.remaining_sprays_masker()
+        if not self._is_current_infection_window():
             mask[1:] = False
         return mask
 
